@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>YouTube Analyzer</title>
+  <link rel="stylesheet" href="popup.css">
+  <meta charset="UTF-8">
+</head>
+
+<body>
+  <h1>YouTube Context Analyzer</h1>
+  <div id="processing-indicator" style="display: none; color: orange;">Processing...</div>
+
+  <button id="getTranscriptBtn">Get Transcript</button>
+  <div id="transcriptResult" class="result-area">
+    Transcript will appear here...
+  </div>
+
+  <hr>
+
+  <button id="analyzeCommentsBtn">Analyze Comments</button>
+  <div id="commentResult" class="result-area">
+    Comment analysis will appear here...
+  </div>
+
+  <hr>
+
+  <div id="factCheckInfo" class="info-area">
+    Select text in the transcript or page, then right-click and choose "Fact-Check Selection".
+  </div>
+  <div id="factCheckResult" class="result-area">
+    Fact-check results will appear here...
+  </div>
+
+  <div id="status" class="status-area"></div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
