@@ -4,7 +4,7 @@ First off, thank you for considering contributing to YouTube Context Analyzer Ex
 
 ## Code of Conduct
 
-By participating in this project, you are expected to uphold our [Code of Conduct](CODE_OF_CONDUCT.md). Please report unacceptable behavior to [your-email@example.com].
+By participating in this project, you are expected to uphold our [Code of Conduct](CODE_OF_CONDUCT.md). Please report unacceptable behavior to [My Email](rishpraveen001@gmail.com).
 
 ## Table of Contents
 
