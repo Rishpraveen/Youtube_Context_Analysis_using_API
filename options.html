@@ -106,6 +106,7 @@
                 <div class="input-group">
                     <label for="huggingfaceModelSelect">Model:</label>
                     <select id="huggingfaceModelSelect">
+                        <option value="microsoft/DialoGPT-medium" selected>DialoGPT-Medium (Free, Conversational)</option>
                         <option value="microsoft/phi-2">Phi-2 (Free, Fast)</option>
                         <option value="google/flan-t5-large">Flan-T5 Large (Free, Balanced)</option>
                         <option value="facebook/opt-1.3b">OPT-1.3B (Free, General)</option>
@@ -201,6 +202,84 @@
                     <label for="defaultTranscript">Default Transcript Text (Optional):</label>
                     <textarea id="defaultTranscript" placeholder="Paste a default transcript here if you want it pre-loaded"></textarea>
                 </div>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h2>Caption Language Settings</h2>
+            <div class="input-group">
+                <label>
+                    <input type="checkbox" id="fetchAllLanguages">
+                    Fetch all available languages
+                </label>
+                <span class="help-text">When enabled, fetches captions in all available languages for comprehensive analysis</span>
+            </div>
+            <div class="input-group">
+                <label>
+                    <input type="checkbox" id="autoTranslateCaptions">
+                    Include auto-generated translations
+                </label>
+                <span class="help-text">Include auto-translated captions (may be less accurate)</span>
+            </div>
+            <div class="input-group">
+                <label>
+                    <input type="checkbox" id="browserExtractionEnabled" checked>
+                    Enable browser player caption extraction
+                </label>
+                <span class="help-text">When YouTube API fails, try extracting captions directly from the player (useful for limited-support languages like Tamil)</span>
+            </div>
+            <div class="input-group" id="languagePreferenceGroup">
+                <label for="preferredLanguages">Preferred Languages (in order of priority):</label>
+                <div class="language-selector">
+                    <div class="language-checkboxes">
+                        <label><input type="checkbox" value="en" checked> English (en)</label>
+                        <label><input type="checkbox" value="es"> Spanish (es)</label>
+                        <label><input type="checkbox" value="fr"> French (fr)</label>
+                        <label><input type="checkbox" value="de"> German (de)</label>
+                        <label><input type="checkbox" value="ja"> Japanese (ja)</label>
+                        <label><input type="checkbox" value="ko"> Korean (ko)</label>
+                        <label><input type="checkbox" value="zh"> Chinese (zh)</label>
+                        <label><input type="checkbox" value="ar"> Arabic (ar)</label>
+                        <label><input type="checkbox" value="hi"> Hindi (hi)</label>
+                        <label><input type="checkbox" value="pt"> Portuguese (pt)</label>
+                        <label><input type="checkbox" value="ru"> Russian (ru)</label>
+                        <label><input type="checkbox" value="it"> Italian (it)</label>
+                        <label><input type="checkbox" value="nl"> Dutch (nl)</label>
+                        <label><input type="checkbox" value="sv"> Swedish (sv)</label>
+                        <label><input type="checkbox" value="da"> Danish (da)</label>
+                        <label><input type="checkbox" value="no"> Norwegian (no)</label>
+                        <label><input type="checkbox" value="fi"> Finnish (fi)</label>
+                        <label><input type="checkbox" value="tr"> Turkish (tr)</label>
+                        <label><input type="checkbox" value="pl"> Polish (pl)</label>
+                        <label><input type="checkbox" value="uk"> Ukrainian (uk)</label>
+                        <!-- Indian Languages -->
+                        <label><input type="checkbox" value="ta"> Tamil (ta) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="te"> Telugu (te) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="bn"> Bengali (bn) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="ml"> Malayalam (ml) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="kn"> Kannada (kn) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="gu"> Gujarati (gu) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="pa"> Punjabi (pa) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="mr"> Marathi (mr) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <label><input type="checkbox" value="ur"> Urdu (ur) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                        <!-- Southeast Asian Languages -->
+                        <label><input type="checkbox" value="th"> Thai (th)</label>
+                        <label><input type="checkbox" value="vi"> Vietnamese (vi)</label>
+                        <label><input type="checkbox" value="id"> Indonesian (id)</label>
+                        <label><input type="checkbox" value="ms"> Malay (ms)</label>
+                        <!-- Other Languages -->
+                        <label><input type="checkbox" value="he"> Hebrew (he)</label>
+                        <label><input type="checkbox" value="fa"> Persian (fa) <span class="limited-support-indicator" title="Limited auto-caption support">⚠️</span></label>
+                    </div>
+                </div>
+                <span class="help-text">
+                    Select languages in order of preference. Uncheck "Fetch all languages" above to use this setting.
+                    <br><br>
+                    <strong>Language Support Notes:</strong><br>
+                    • Languages marked with ⚠️ have limited auto-generated caption support<br>
+                    • For better results with limited-support languages, try manual transcript mode<br>
+                    • Many videos have manually uploaded captions even when auto-generated ones aren't available
+                </span>
             </div>
         </div>
 

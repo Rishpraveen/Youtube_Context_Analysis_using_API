@@ -130,6 +130,150 @@ function displayFormattedRagAnalysis(ragData) {
     ragResultDiv.innerHTML = html;
 }
 
+function displayMultiLanguageTranscript(multiLangData) {
+    let html = `<div class="multi-language-transcript">`;
+    
+    // Language availability information
+    html += `<div class="language-info">`;
+    html += `<strong>Available Languages (${multiLangData.languages.length}):</strong> `;
+    html += multiLangData.languages.map(lang => {
+        const langData = multiLangData.languageData[lang];
+        const languageName = getLanguageName(lang);
+        const typeIndicator = langData.isAutoTranslated ? '📝' : 
+                            langData.kind === 'asr' ? '🤖' : '👤';
+        return `<span class="language-tag" title="${languageName} ${getLanguageTypeDescription(langData)}">${typeIndicator} ${lang.toUpperCase()}</span>`;
+    }).join(' ');
+    html += `</div>`;
+    
+    // Warning/info about missing languages
+    if (multiLangData.metadata && multiLangData.metadata.missingLanguages.length > 0) {
+        html += `<div class="language-warning">`;
+        const missingLangs = multiLangData.metadata.missingLanguages;
+        const limitedSupportLangs = multiLangData.metadata.limitedSupportLanguages || [];
+        
+        if (limitedSupportLangs.length > 0) {
+            const langNames = limitedSupportLangs.map(lang => getLanguageName(lang)).join(', ');
+            html += `<div class="warning limited-support">`;
+            html += `⚠️ <strong>Limited Caption Support:</strong> ${langNames} may not have auto-generated captions available. `;
+            html += `<button class="help-button" onclick="showLanguageSupportInfo()">Learn More</button>`;
+            html += `</div>`;
+        }
+        
+        const otherMissing = missingLangs.filter(lang => !limitedSupportLangs.includes(lang));
+        if (otherMissing.length > 0) {
+            const langNames = otherMissing.map(lang => getLanguageName(lang)).join(', ');
+            html += `<div class="warning">`;
+            html += `📋 <strong>Unavailable:</strong> ${langNames} - No captions found for this video.`;
+            html += `</div>`;
+        }
+        
+        if (multiLangData.metadata.availableLanguages.length > multiLangData.languages.length) {
+            html += `<div class="info">`;
+            html += `💡 <strong>Tip:</strong> This video has additional languages available. `;
+            html += `<button class="help-button" onclick="showAllAvailableLanguages('${JSON.stringify(multiLangData.metadata.availableLanguages).replace(/"/g, '&quot;')}')">Show All</button>`;
+            html += `</div>`;
+        }
+        html += `</div>`;
+    }
+    
+    // Fetch errors information
+    if (multiLangData.metadata && multiLangData.metadata.fetchErrors.length > 0) {
+        html += `<div class="language-errors">`;
+        html += `<div class="error-summary">`;
+        html += `⚠️ <strong>Fetch Issues:</strong> Some languages couldn't be loaded. `;
+        html += `<button class="help-button" onclick="showFetchErrors('${JSON.stringify(multiLangData.metadata.fetchErrors).replace(/"/g, '&quot;')}')">Details</button>`;
+        html += `</div>`;
+        html += `</div>`;
+    }
+    
+    // Language selector tabs
+    html += `<div class="language-tabs">`;
+    html += `<button class="lang-tab active" data-lang="combined">Combined View</button>`;
+    multiLangData.languages.forEach(lang => {
+        const langData = multiLangData.languageData[lang];
+        const languageName = getLanguageName(lang);
+        const displayName = languageName !== lang.toUpperCase() ? languageName : (langData.name || lang.toUpperCase());
+        const typeIndicator = langData.isAutoTranslated ? ' 📝' : 
+                            langData.kind === 'asr' ? ' 🤖' : ' 👤';
+        html += `<button class="lang-tab" data-lang="${lang}" title="${getLanguageTypeDescription(langData)}">${displayName}${typeIndicator}</button>`;
+    });
+    html += `</div>`;
+    
+    // Combined transcript view (default)
+    html += `<div class="transcript-content active" data-content="combined">`;
+    html += `<pre>${multiLangData.combinedTranscript}</pre>`;
+    html += `</div>`;
+    
+    // Individual language views
+    multiLangData.languages.forEach(lang => {
+        const langData = multiLangData.languageData[lang];
+        const languageName = getLanguageName(lang);
+        html += `<div class="transcript-content" data-content="${lang}">`;
+        html += `<div class="language-meta">`;
+        html += `<strong>Language:</strong> ${languageName} (${lang.toUpperCase()})<br>`;
+        html += `<strong>Type:</strong> ${getLanguageTypeDescription(langData)}<br>`;
+        if (langData.kind) html += `<strong>Track Kind:</strong> ${langData.kind}<br>`;
+        if (langData.audioTrackType) html += `<strong>Audio Track:</strong> ${langData.audioTrackType}<br>`;
+        html += `</div>`;
+        html += `<pre>${convertSRTToTranscript(langData.content)}</pre>`;
+        html += `</div>`;
+    });
+    
+    html += `</div>`;
+    
+    transcriptResultDiv.innerHTML = html;
+    
+    // Add event listeners for language tabs
+    setupLanguageTabSwitching();
+}
+
+// Helper function to convert SRT to readable transcript (client-side)
+function convertSRTToTranscript(srtContent) {
+    const entries = srtContent.split('\n\n').filter(entry => entry.trim());
+    const parsedCaptions = [];
+    
+    for (const entry of entries) {
+        const lines = entry.split('\n');
+        if (lines.length >= 3) {
+            const timestamp = lines[1].trim();
+            const text = lines.slice(2).join(' ').trim();
+            
+            // Extract start time
+            const timeMatch = timestamp.match(/(\d{2}:\d{2}:\d{2},\d{3})/);
+            const startTime = timeMatch ? timeMatch[1] : null;
+            
+            if (startTime && text) {
+                parsedCaptions.push(`[${startTime}] ${text}`);
+            }
+        }
+    }
+    
+    return parsedCaptions.join('\n');
+}
+
+function setupLanguageTabSwitching() {
+    const tabs = document.querySelectorAll('.lang-tab');
+    const contents = document.querySelectorAll('.transcript-content');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Remove active class from all tabs and contents
+            tabs.forEach(t => t.classList.remove('active'));
+            contents.forEach(c => c.classList.remove('active'));
+            
+            // Add active class to clicked tab
+            tab.classList.add('active');
+            
+            // Show corresponding content
+            const targetLang = tab.dataset.lang;
+            const targetContent = document.querySelector(`[data-content="${targetLang}"]`);
+            if (targetContent) {
+                targetContent.classList.add('active');
+            }
+        });
+    });
+}
+
 function displayManualTranscriptModal(videoId, errorMessage = null) {
     // Create the modal container
     const modalOverlay = document.createElement('div');
@@ -295,8 +439,8 @@ transcriptBtn.addEventListener('click', () => {
     transcriptResultDiv.textContent = 'Processing...';
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id && tabs[0]?.url?.includes("youtube.com/watch")) {
-            const videoId = new URL(tabs[0].url).searchParams.get('v');
+        if (tabs[0]?.id && tabs[0]?.url && isYouTubeVideoUrl(tabs[0].url)) {
+            const videoId = extractVideoId(tabs[0].url);
             currentVideoId = videoId;
             chrome.runtime.sendMessage({ 
                 action: "getTranscript", 
@@ -304,54 +448,71 @@ transcriptBtn.addEventListener('click', () => {
                 videoId: videoId 
             });
         } else {
-            updateStatus("Not a YouTube video page or cannot access tab.", true);
-            transcriptResultDiv.textContent = "Please navigate to a YouTube video page.";
+            updateStatus("Not a YouTube video or Short page or cannot access tab.", true);
+            transcriptResultDiv.textContent = "Please navigate to a YouTube video or Short page.";
             setProcessing(false);
         }
     });
 });
 
 commentsBtn.addEventListener('click', () => {
-    if (isProcessing) return;
+    console.log('Comment analysis button clicked');
+    if (isProcessing) {
+        console.log('Already processing, ignoring click');
+        return;
+    }
     setProcessing(true);
     updateStatus('Requesting comment analysis...');
     commentResultDiv.textContent = 'Processing...';
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id && tabs[0]?.url?.includes("youtube.com/watch")) {
-            const videoId = new URL(tabs[0].url).searchParams.get('v');
+        console.log('Tabs query result:', tabs);
+        if (tabs[0]?.id && tabs[0]?.url && isYouTubeVideoUrl(tabs[0].url)) {
+            const videoId = extractVideoId(tabs[0].url);
+            console.log('Video ID extracted:', videoId);
             currentVideoId = videoId;
+            console.log('Sending analyzeComments message to background');
             chrome.runtime.sendMessage({ 
                 action: "analyzeComments", 
                 tabId: tabs[0].id,
                 videoId: videoId 
             });
         } else {
-            updateStatus("Not a YouTube video page or cannot access tab.", true);
-            commentResultDiv.textContent = "Please navigate to a YouTube video page.";
+            console.log('Not on YouTube video or Short page');
+            updateStatus("Not a YouTube video or Short page or cannot access tab.", true);
+            commentResultDiv.textContent = "Please navigate to a YouTube video or Short page.";
             setProcessing(false);
         }
     });
 });
 
 ragBtn.addEventListener('click', () => {
-    if (isProcessing) return;
+    console.log('RAG analysis button clicked');
+    if (isProcessing) {
+        console.log('Already processing, ignoring click');
+        return;
+    }
     
     const query = ragQuery.value.trim();
     if (!query) {
+        console.log('No query entered');
         updateStatus("Please enter a question to analyze.", true);
         return;
     }
     
+    console.log('RAG query:', query);
     setProcessing(true);
     updateStatus('Performing RAG analysis...');
     ragResultDiv.textContent = 'Processing...';
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id && tabs[0]?.url?.includes("youtube.com/watch")) {
-            const videoId = new URL(tabs[0].url).searchParams.get('v');
+        console.log('RAG tabs query result:', tabs);
+        if (tabs[0]?.id && tabs[0]?.url && isYouTubeVideoUrl(tabs[0].url)) {
+            const videoId = extractVideoId(tabs[0].url);
+            console.log('RAG Video ID extracted:', videoId);
             currentVideoId = videoId;
             
+            console.log('Sending performRagAnalysis message to background');
             chrome.runtime.sendMessage({ 
                 action: "performRagAnalysis",
                 tabId: tabs[0].id,
@@ -359,8 +520,9 @@ ragBtn.addEventListener('click', () => {
                 query: query 
             });
         } else {
-            updateStatus("Not a YouTube video page or cannot access tab.", true);
-            ragResultDiv.textContent = "Please navigate to a YouTube video page.";
+            console.log('Not on YouTube video or Short page for RAG');
+            updateStatus("Not a YouTube video or Short page or cannot access tab.", true);
+            ragResultDiv.textContent = "Please navigate to a YouTube video or Short page.";
             setProcessing(false);
         }
     });
@@ -387,12 +549,46 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         if (request.data) {
             transcriptData = request.data; // Store transcript for RAG
-            displayFormattedTranscript(request.data);
+            
+            // Handle multi-language transcripts
+            if (request.data.type === 'multi-language') {
+                displayMultiLanguageTranscript(request.data);
+                
+                // Enhanced status message with language info
+                let statusMessage = `Multi-language transcript processed (${request.data.languages.length} languages).`;
+                if (request.data.metadata) {
+                    const meta = request.data.metadata;
+                    
+                    // Show extraction method
+                    if (meta.extractionMethod === 'browser-player') {
+                        statusMessage += ` 🌐 Extracted from browser player.`;
+                    } else if (meta.extractionMethod === 'browser-player-fallback') {
+                        statusMessage += ` 🔄 Used browser player fallback.`;
+                    }
+                    
+                    if (meta.missingLanguages.length > 0) {
+                        const limitedSupport = meta.limitedSupportLanguages || [];
+                        if (limitedSupport.length > 0) {
+                            const langNames = limitedSupport.map(lang => getLanguageName(lang)).join(', ');
+                            statusMessage += ` Note: ${langNames} may have limited caption support.`;
+                        }
+                        if (meta.missingLanguages.length > limitedSupport.length) {
+                            statusMessage += ` Some preferred languages were not available.`;
+                        }
+                    }
+                    if (meta.fetchErrors.length > 0) {
+                        statusMessage += ` Some languages had fetch issues.`;
+                    }
+                }
+                updateStatus(statusMessage);
+            } else {
+                // Single language transcript (backward compatibility)
+                displayFormattedTranscript(request.data);
+                updateStatus('Transcript processed.');
+            }
             
             if (request.fromCache) {
                 updateStatus('Transcript loaded from cache.');
-            } else {
-                updateStatus('Transcript processed.');
             }
         } else if (request.error) {
             transcriptResultDiv.textContent = `Error: ${request.error}`;
@@ -400,10 +596,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             displayManualTranscriptModal(currentVideoId, request.error); // Show manual entry modal on error
         }
     } else if (request.action === "displayCommentAnalysis") {
+        console.log('Received displayCommentAnalysis message:', request);
         setProcessing(false); // Comment analysis finished
         updateProgress('comments', 100); // Complete the progress
         
         if (request.data) {
+            console.log('Displaying comment analysis data:', request.data);
             displayFormattedCommentAnalysis(request.data);
             
             if (request.data.fromCache) {
@@ -412,14 +610,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 updateStatus('Comment analysis complete.');
             }
         } else if (request.error) {
+            console.error('Comment analysis error:', request.error);
             commentResultDiv.textContent = `Error: ${request.error}`;
             updateStatus(`Error analyzing comments: ${request.error}`, true);
         }
     } else if (request.action === "displayRagAnalysis") {
+        console.log('Received displayRagAnalysis message:', request);
         setProcessing(false);
         updateProgress('rag', 100); // Complete the progress
         
         if (request.data) {
+            console.log('Displaying RAG analysis data:', request.data);
             displayFormattedRagAnalysis(request.data);
             
             if (request.data.fromCache) {
@@ -428,6 +629,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 updateStatus('RAG analysis complete.');
             }
         } else if (request.error) {
+            console.error('RAG analysis error:', request.error);
             ragResultDiv.textContent = `Error: ${request.error}`;
             updateStatus(`Error in RAG analysis: ${request.error}`, true);
         }
@@ -585,3 +787,199 @@ document.addEventListener('keydown', (e) => {
             break;
     }
 });
+
+// Helper functions for language support
+
+// Get language name from language code
+function getLanguageName(langCode) {
+    const languageNames = {
+        'en': 'English',
+        'es': 'Spanish',
+        'fr': 'French',
+        'de': 'German',
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'zh': 'Chinese',
+        'zh-CN': 'Chinese (Simplified)',
+        'zh-TW': 'Chinese (Traditional)',
+        'ar': 'Arabic',
+        'hi': 'Hindi',
+        'pt': 'Portuguese',
+        'ru': 'Russian',
+        'it': 'Italian',
+        'nl': 'Dutch',
+        'sv': 'Swedish',
+        'da': 'Danish',
+        'no': 'Norwegian',
+        'fi': 'Finnish',
+        'pl': 'Polish',
+        'tr': 'Turkish',
+        'th': 'Thai',
+        'vi': 'Vietnamese',
+        'ta': 'Tamil',
+        'te': 'Telugu',
+        'bn': 'Bengali',
+        'ur': 'Urdu',
+        'ml': 'Malayalam',
+        'kn': 'Kannada',
+        'gu': 'Gujarati',
+        'pa': 'Punjabi',
+        'or': 'Oriya',
+        'as': 'Assamese',
+        'mr': 'Marathi'
+    };
+    
+    return languageNames[langCode] || langCode.toUpperCase();
+}
+
+// Get description of language track type
+function getLanguageTypeDescription(langData) {
+    if (langData.isAutoTranslated) {
+        return 'Auto-translated from another language';
+    } else if (langData.kind === 'asr') {
+        return 'Auto-generated captions';
+    } else {
+        return 'Manually created/uploaded captions';
+    }
+}
+
+// Show language support information modal
+function showLanguageSupportInfo() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content language-support-modal">
+            <div class="modal-header">
+                <h3>🌐 Language Caption Support</h3>
+                <button class="modal-close" onclick="this.parentElement.parentElement.parentElement.remove()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h4>Caption Types:</h4>
+                <ul>
+                    <li><strong>👤 Manual:</strong> Manually created/uploaded by video creator - highest quality</li>
+                    <li><strong>🤖 Auto-generated:</strong> AI-generated captions - good for popular languages</li>
+                    <li><strong>📝 Auto-translated:</strong> Machine-translated from another language - may have errors</li>
+                </ul>
+                
+                <h4>Limited Support Languages:</h4>
+                <p>Some languages (like Tamil, Telugu, Bengali, etc.) may not have auto-generated captions available because:</p>
+                <ul>
+                    <li>YouTube's automatic speech recognition has limited support for these languages</li>
+                    <li>The video creator hasn't uploaded manual captions</li>
+                    <li>Smaller speaker populations mean less training data for AI models</li>
+                </ul>
+                
+                <h4>Alternatives:</h4>
+                <ul>
+                    <li><strong>Manual Mode:</strong> Use the manual transcript feature to enter text yourself</li>
+                    <li><strong>Check for Manual Captions:</strong> Look for manually uploaded captions in your language</li>
+                    <li><strong>Use English/Other Available Languages:</strong> Many videos have English captions even if native language captions aren't available</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" onclick="this.parentElement.parentElement.parentElement.remove()">Close</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Show all available languages
+function showAllAvailableLanguages(availableLanguagesJson) {
+    const availableLanguages = JSON.parse(availableLanguagesJson);
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    
+    const languagesList = availableLanguages.map(lang => {
+        const langName = getLanguageName(lang);
+        return `<li><strong>${langName}</strong> (${lang})</li>`;
+    }).join('');
+    
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📋 All Available Languages</h3>
+                <button class="modal-close" onclick="this.parentElement.parentElement.parentElement.remove()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>This video has captions available in the following languages:</p>
+                <ul class="available-languages-list">
+                    ${languagesList}
+                </ul>
+                <p><em>To fetch different languages, update your preferred languages in the extension options.</em></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" onclick="this.parentElement.parentElement.parentElement.remove()">Close</button>
+                <button class="btn primary" onclick="chrome.runtime.openOptionsPage(); this.parentElement.parentElement.parentElement.remove()">Open Options</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Show fetch errors details
+function showFetchErrors(fetchErrorsJson) {
+    const fetchErrors = JSON.parse(fetchErrorsJson);
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    
+    const errorsList = fetchErrors.map(error => {
+        const langName = getLanguageName(error.language);
+        return `<li><strong>${langName}</strong> (${error.language}): ${error.error}</li>`;
+    }).join('');
+    
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚠️ Fetch Errors</h3>
+                <button class="modal-close" onclick="this.parentElement.parentElement.parentElement.remove()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>The following languages couldn't be loaded:</p>
+                <ul class="fetch-errors-list">
+                    ${errorsList}
+                </ul>
+                <p><em>These errors are usually due to API limitations or temporary issues.</em></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" onclick="this.parentElement.parentElement.parentElement.remove()">Close</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Utility function to extract video ID from YouTube URL (supports both standard and Shorts)
+function extractVideoId(url) {
+    if (!url) return null;
+    
+    try {
+        const urlObj = new URL(url);
+        
+        // Check for standard YouTube video URL (/watch?v=)
+        const videoParam = urlObj.searchParams.get('v');
+        if (videoParam) {
+            return videoParam;
+        }
+        
+        // Check for YouTube Shorts URL (/shorts/)
+        const shortsMatch = urlObj.pathname.match(/\/shorts\/([a-zA-Z0-9_-]+)/);
+        if (shortsMatch) {
+            return shortsMatch[1];
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error extracting video ID from URL:', error);
+        return null;
+    }
+}
+
+// Check if URL is a YouTube video or Short
+function isYouTubeVideoUrl(url) {
+    if (!url) return false;
+    return url.includes('youtube.com/watch') || url.includes('youtube.com/shorts/');
+}

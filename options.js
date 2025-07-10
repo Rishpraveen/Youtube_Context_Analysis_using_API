@@ -52,6 +52,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const testOllamaApiBtn = document.getElementById('testOllamaApiBtn');
     const ollamaApiStatus = document.getElementById('ollamaApiStatus');
 
+    // Language settings elements
+    const fetchAllLanguagesCheckbox = document.getElementById('fetchAllLanguages');
+    const autoTranslateCaptionsCheckbox = document.getElementById('autoTranslateCaptions');
+    const browserExtractionEnabledCheckbox = document.getElementById('browserExtractionEnabled');
+    const languagePreferenceGroup = document.getElementById('languagePreferenceGroup');
+    const languageCheckboxes = document.querySelectorAll('.language-checkboxes input[type="checkbox"]');
+
     // Default settings
     const defaultSettings = {
         apiProvider: 'openai',
@@ -59,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         openaiApiKey: '',
         openaiModel: 'gpt-3.5-turbo',
         huggingfaceApiKey: '',
-        huggingfaceModel: 'microsoft/phi-2',
+        huggingfaceModel: 'microsoft/DialoGPT-medium',
         geminiApiKey: '',
         geminiModel: 'gemini-1.5-flash',
         ollamaEndpoint: 'http://localhost:11434',
@@ -68,7 +75,11 @@ document.addEventListener('DOMContentLoaded', () => {
         maxComments: 100,
         chunkSize: 1000,
         manualMode: false,
-        defaultTranscript: ''
+        defaultTranscript: '',
+        preferredLanguages: ['en', 'es', 'fr', 'de', 'ja', 'ko', 'zh', 'ar', 'hi', 'pt'],
+        fetchAllLanguages: false,
+        autoTranslateCaptions: false,
+        browserExtractionEnabled: true
     };
 
     // Load saved settings
@@ -89,7 +100,11 @@ document.addEventListener('DOMContentLoaded', () => {
             'maxComments',
             'chunkSize',
             'manualMode',
-            'defaultTranscript'
+            'defaultTranscript',
+            'preferredLanguages',
+            'fetchAllLanguages',
+            'autoTranslateCaptions',
+            'browserExtractionEnabled'
         ], (result) => {
             console.log('Settings loaded:', result);
             
@@ -132,6 +147,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 defaultTranscript.value = result.defaultTranscript;
             }
             
+            // Language settings
+            if (fetchAllLanguagesCheckbox) {
+                fetchAllLanguagesCheckbox.checked = result.fetchAllLanguages || false;
+                toggleLanguagePreferences();
+            }
+            
+            if (autoTranslateCaptionsCheckbox) {
+                autoTranslateCaptionsCheckbox.checked = result.autoTranslateCaptions || false;
+            }
+            
+            if (browserExtractionEnabledCheckbox) {
+                browserExtractionEnabledCheckbox.checked = result.browserExtractionEnabled !== false; // Default to true
+            }
+            
+            // Load preferred languages
+            if (languageCheckboxes && result.preferredLanguages) {
+                languageCheckboxes.forEach(checkbox => {
+                    checkbox.checked = result.preferredLanguages.includes(checkbox.value);
+                });
+            }
+            
             console.log('Settings loading completed');
         });
     }
@@ -158,7 +194,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 maxComments: maxCommentsInput ? parseInt(maxCommentsInput.value) : defaultSettings.maxComments,
                 chunkSize: chunkSizeInput ? parseInt(chunkSizeInput.value) : defaultSettings.chunkSize,
                 manualMode: manualModeToggle ? manualModeToggle.checked : defaultSettings.manualMode,
-                defaultTranscript: defaultTranscript ? defaultTranscript.value : ''
+                defaultTranscript: defaultTranscript ? defaultTranscript.value : '',
+                fetchAllLanguages: fetchAllLanguagesCheckbox ? fetchAllLanguagesCheckbox.checked : defaultSettings.fetchAllLanguages,
+                autoTranslateCaptions: autoTranslateCaptionsCheckbox ? autoTranslateCaptionsCheckbox.checked : defaultSettings.autoTranslateCaptions,
+                browserExtractionEnabled: browserExtractionEnabledCheckbox ? browserExtractionEnabledCheckbox.checked : defaultSettings.browserExtractionEnabled,
+                preferredLanguages: getSelectedLanguages()
             };
 
             console.log('Settings to save:', settings);
@@ -204,6 +244,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             if (defaultTranscript) defaultTranscript.value = defaultSettings.defaultTranscript;
+            
+            // Reset language settings
+            if (fetchAllLanguagesCheckbox) fetchAllLanguagesCheckbox.checked = defaultSettings.fetchAllLanguages;
+            if (autoTranslateCaptionsCheckbox) autoTranslateCaptionsCheckbox.checked = defaultSettings.autoTranslateCaptions;
+            if (browserExtractionEnabledCheckbox) browserExtractionEnabledCheckbox.checked = defaultSettings.browserExtractionEnabled;
+            
+            // Reset language checkboxes
+            if (languageCheckboxes) {
+                languageCheckboxes.forEach(checkbox => {
+                    checkbox.checked = defaultSettings.preferredLanguages.includes(checkbox.value);
+                });
+            }
+            
+            // Update language preference visibility
+            toggleLanguagePreferences();
             
             // Clear storage and set defaults
             chrome.storage.local.clear(() => {
@@ -388,16 +443,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
             
-            const data = await response.json();
+            let data;
+            let isJsonResponse = false;
+            
+            // Check if response is JSON
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                try {
+                    data = await response.json();
+                    isJsonResponse = true;
+                } catch (jsonError) {
+                    console.error('JSON parse error:', jsonError);
+                    data = await response.text();
+                }
+            } else {
+                data = await response.text();
+            }
             
             if (response.ok) {
-                showAPIStatus(huggingfaceApiStatus, 'Connection successful! ✓', 'success');
-            } else if (data.error) {
-                showAPIStatus(huggingfaceApiStatus, `Error: ${data.error}`, 'error');
+                if (isJsonResponse && Array.isArray(data) && data.length > 0) {
+                    showAPIStatus(huggingfaceApiStatus, 'Connection successful! ✓', 'success');
+                } else if (isJsonResponse && data.error) {
+                    showAPIStatus(huggingfaceApiStatus, `Error: ${data.error}`, 'error');
+                } else if (!isJsonResponse && data.includes('generated_text')) {
+                    showAPIStatus(huggingfaceApiStatus, 'Connection successful! ✓', 'success');
+                } else {
+                    showAPIStatus(huggingfaceApiStatus, 'Connection successful! ✓', 'success');
+                }
             } else {
-                showAPIStatus(huggingfaceApiStatus, 'Unknown error testing API', 'error');
+                if (response.status === 404) {
+                    showAPIStatus(huggingfaceApiStatus, `Error: Model "${model}" not found. Check model name.`, 'error');
+                } else if (response.status === 401) {
+                    showAPIStatus(huggingfaceApiStatus, 'Error: Invalid API key or unauthorized access.', 'error');
+                } else if (response.status === 429) {
+                    showAPIStatus(huggingfaceApiStatus, 'Error: Rate limit exceeded. Try again later.', 'error');
+                } else if (isJsonResponse && data.error) {
+                    showAPIStatus(huggingfaceApiStatus, `Error: ${data.error}`, 'error');
+                } else {
+                    showAPIStatus(huggingfaceApiStatus, `Error ${response.status}: ${data}`, 'error');
+                }
             }
         } catch (error) {
+            console.error('Hugging Face API test error:', error);
             showAPIStatus(huggingfaceApiStatus, `Error: ${error.message}`, 'error');
         }
     }
@@ -534,6 +621,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (val > max) input.value = max;
     }
 
+    // Language settings helper functions
+    function getSelectedLanguages() {
+        if (!languageCheckboxes) return defaultSettings.preferredLanguages;
+        
+        const selected = [];
+        languageCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selected.push(checkbox.value);
+            }
+        });
+        return selected.length > 0 ? selected : defaultSettings.preferredLanguages;
+    }
+
+    function toggleLanguagePreferences() {
+        if (!fetchAllLanguagesCheckbox || !languagePreferenceGroup) return;
+        
+        if (fetchAllLanguagesCheckbox.checked) {
+            languagePreferenceGroup.classList.add('disabled');
+        } else {
+            languagePreferenceGroup.classList.remove('disabled');
+        }
+    }
+
     // Event Listeners - Check if elements exist before adding listeners
     if (saveButton) saveButton.addEventListener('click', saveSettings);
     if (resetButton) resetButton.addEventListener('click', resetSettings);
@@ -576,6 +686,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (batchSizeInput) batchSizeInput.addEventListener('change', () => validateNumberInput(batchSizeInput, 10, 100));
     if (maxCommentsInput) maxCommentsInput.addEventListener('change', () => validateNumberInput(maxCommentsInput, 50, 1000));
     if (chunkSizeInput) chunkSizeInput.addEventListener('change', () => validateNumberInput(chunkSizeInput, 500, 8000));
+
+    // Language settings event listeners
+    if (fetchAllLanguagesCheckbox) {
+        fetchAllLanguagesCheckbox.addEventListener('change', toggleLanguagePreferences);
+    }
 
     // Debug: Check if all elements exist
     console.log('Checking elements...');

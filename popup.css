@@ -212,6 +212,102 @@ button:enabled {
   font-size: 11px;
 }
 
+/* Multi-language transcript styles */
+.multi-language-transcript {
+  margin-top: 10px;
+}
+
+.language-info {
+  margin-bottom: 10px;
+  padding: 8px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.language-tag {
+  display: inline-block;
+  background-color: #4285f4;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+.language-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.lang-tab {
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-bottom: none;
+  padding: 6px 12px;
+  margin-right: 2px;
+  cursor: pointer;
+  font-size: 11px;
+  border-radius: 4px 4px 0 0;
+  transition: background-color 0.2s;
+  width: auto;
+  margin-bottom: 0;
+}
+
+.lang-tab:hover {
+  background-color: #e8e8e8;
+}
+
+.lang-tab.active {
+  background-color: #4285f4;
+  color: white;
+  border-color: #4285f4;
+}
+
+.transcript-content {
+  display: none;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.transcript-content.active {
+  display: block;
+}
+
+.transcript-content pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 0;
+  padding: 10px;
+  background-color: #fafafa;
+  border-radius: 4px;
+}
+
+.language-meta {
+  background-color: #e8f4f8;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+/* Responsive adjustments for language tabs */
+@media (max-width: 520px) {
+  .lang-tab {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+  
+  .language-tag {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+}
+
 details summary {
   cursor: pointer;
   color: #4285f4;
@@ -219,4 +315,218 @@ details summary {
 
 details summary:hover {
   text-decoration: underline;
+}
+
+/* Language support information styles */
+.language-warning, .language-errors {
+    margin: 10px 0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.language-warning .warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 4px;
+}
+
+.language-warning .warning.limited-support {
+    background-color: #ffe6e6;
+    border: 1px solid #ffb3b3;
+    color: #721c24;
+}
+
+.language-warning .info {
+    background-color: #e6f3ff;
+    border: 1px solid #b3d9ff;
+    color: #0c5460;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 4px;
+}
+
+.language-errors .error-summary {
+    background-color: #ffebee;
+    border: 1px solid #ffcdd2;
+    color: #c62828;
+    padding: 8px 10px;
+    border-radius: 4px;
+}
+
+.help-button {
+    background: none;
+    border: 1px solid currentColor;
+    color: inherit;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    margin-left: 6px;
+    transition: all 0.2s ease;
+}
+
+.help-button:hover {
+    background-color: currentColor;
+    color: white;
+}
+
+/* Enhanced language tags */
+.language-tag {
+    display: inline-block;
+    background-color: #e8f4fd;
+    color: #1565c0;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    margin: 2px 3px;
+    border: 1px solid #bbdefb;
+    cursor: help;
+}
+
+.language-tag:hover {
+    background-color: #2196f3;
+    color: white;
+    transform: translateY(-1px);
+}
+
+/* Language support modal styles */
+.language-support-modal {
+    max-width: 600px;
+    width: 90%;
+}
+
+.language-support-modal h4 {
+    color: #1976d2;
+    margin: 15px 0 8px 0;
+    font-size: 16px;
+}
+
+.language-support-modal ul {
+    margin: 8px 0 15px 20px;
+    padding: 0;
+}
+
+.language-support-modal li {
+    margin: 6px 0;
+    line-height: 1.4;
+}
+
+.available-languages-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 10px;
+    background-color: #f9f9f9;
+}
+
+.fetch-errors-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #ffcdd2;
+    border-radius: 4px;
+    padding: 10px;
+    background-color: #ffebee;
+}
+
+.fetch-errors-list li {
+    color: #c62828;
+    margin: 8px 0;
+}
+
+/* Enhanced language meta information */
+.language-meta {
+    background-color: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    border-left: 4px solid #4caf50;
+    font-size: 13px;
+}
+
+.language-meta strong {
+    color: #2e7d32;
+}
+
+/* Enhanced tab styling for language types */
+.lang-tab {
+    position: relative;
+    padding: 8px 12px;
+    margin: 2px;
+    border: 1px solid #ddd;
+    background-color: #f8f9fa;
+    color: #495057;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.lang-tab:hover {
+    background-color: #e9ecef;
+    border-color: #adb5bd;
+    transform: translateY(-1px);
+}
+
+.lang-tab.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+}
+
+.lang-tab[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #333;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+/* Language tabs container improvements */
+.language-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 15px 0;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+/* Multi-language transcript container */
+.multi-language-transcript {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 16px;
+    background-color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.language-info {
+    padding: 12px;
+    background-color: #e8f4fd;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    border-left: 4px solid #2196f3;
+}
+
+.language-info strong {
+    color: #1565c0;
 }

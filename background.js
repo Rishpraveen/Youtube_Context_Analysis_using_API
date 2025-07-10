@@ -8,7 +8,7 @@ let OPENAI_MODEL = 'gpt-3.5-turbo';
 
 // Hugging Face settings
 let HUGGINGFACE_API_KEY = null;
-let HUGGINGFACE_MODEL = 'microsoft/phi-2';
+let HUGGINGFACE_MODEL = 'microsoft/DialoGPT-medium';
 
 // Gemini settings
 let GEMINI_API_KEY = null;
@@ -24,6 +24,12 @@ let MAX_COMMENTS = 100;
 let CHUNK_SIZE = 1000;
 let MANUAL_MODE = false;
 let DEFAULT_TRANSCRIPT = '';
+
+// Language settings for captions
+let PREFERRED_LANGUAGES = ['en', 'es', 'fr', 'de', 'ja', 'ko', 'zh', 'ar', 'hi', 'pt']; // Default language priority
+let FETCH_ALL_LANGUAGES = false; // Whether to fetch all available languages
+let AUTO_TRANSLATE_CAPTIONS = false; // Whether to use auto-generated translations
+let BROWSER_EXTRACTION_ENABLED = true; // Whether to enable browser player caption extraction as fallback
 
 // Cache objects
 const transcriptCache = {};
@@ -53,7 +59,11 @@ async function loadSettings() {
             'maxComments',
             'chunkSize',
             'manualMode',
-            'defaultTranscript'
+            'defaultTranscript',
+            'preferredLanguages',
+            'fetchAllLanguages',
+            'autoTranslateCaptions',
+            'browserExtractionEnabled'
         ]);
         
         // API Provider
@@ -68,7 +78,7 @@ async function loadSettings() {
         
         // Hugging Face settings
         HUGGINGFACE_API_KEY = settings.huggingfaceApiKey || null;
-        HUGGINGFACE_MODEL = settings.huggingfaceModel || 'microsoft/phi-2';
+        HUGGINGFACE_MODEL = settings.huggingfaceModel || 'microsoft/DialoGPT-medium';
         
         // Gemini settings
         GEMINI_API_KEY = settings.geminiApiKey || null;
@@ -85,10 +95,21 @@ async function loadSettings() {
         MANUAL_MODE = settings.manualMode || false;
         DEFAULT_TRANSCRIPT = settings.defaultTranscript || '';
 
+        // Language settings
+        PREFERRED_LANGUAGES = settings.preferredLanguages || ['en', 'es', 'fr', 'de', 'ja', 'ko', 'zh', 'ar', 'hi', 'pt'];
+        FETCH_ALL_LANGUAGES = settings.fetchAllLanguages || false;
+        AUTO_TRANSLATE_CAPTIONS = settings.autoTranslateCaptions || false;
+        BROWSER_EXTRACTION_ENABLED = settings.browserExtractionEnabled !== false; // Default to true
+
         console.log("Settings loaded",
             `Provider: ${API_PROVIDER}`,
             YOUTUBE_API_KEY ? "YouTube API: ✓" : "YouTube API: ✗",
-            MANUAL_MODE ? "Manual Mode: ✓" : "Manual Mode: ✗");
+            OPENAI_API_KEY ? "OpenAI API: ✓" : "OpenAI API: ✗",
+            HUGGINGFACE_API_KEY ? "Hugging Face API: ✓" : "Hugging Face API: ✗",
+            GEMINI_API_KEY ? "Gemini API: ✓" : "Gemini API: ✗",
+            OLLAMA_ENDPOINT ? "Ollama API: ✓" : "Ollama API: ✗",
+            MANUAL_MODE ? "Manual Mode: ✓" : "Manual Mode: ✗",
+            BROWSER_EXTRACTION_ENABLED ? "Browser Extraction: ✓" : "Browser Extraction: ✗");
             
         return settings;
     } catch (err) {
@@ -133,10 +154,21 @@ async function processBatch(items, batchSize, processFunc, progressType = null) 
     const results = [];
     const totalBatches = Math.ceil(items.length / batchSize);
     
+    console.log(`Processing ${items.length} items in ${totalBatches} batches of size ${batchSize}`);
+    
     for (let i = 0; i < items.length; i += batchSize) {
         const batch = items.slice(i, i + batchSize);
-        const batchResults = await processFunc(batch);
-        results.push(...batchResults);
+        console.log(`Processing batch ${Math.floor(i / batchSize) + 1}/${totalBatches} with ${batch.length} items`);
+        
+        const batchResult = await processFunc(batch);
+        console.log('Batch result:', batchResult);
+        
+        // Handle both single results and array results
+        if (Array.isArray(batchResult)) {
+            results.push(...batchResult);
+        } else {
+            results.push(batchResult);
+        }
         
         // Update progress if progressType is provided
         if (progressType) {
@@ -151,23 +183,32 @@ async function processBatch(items, batchSize, processFunc, progressType = null) 
             gc && gc(); // Hint garbage collection if available
         }
     }
+    
+    console.log(`processBatch completed, ${results.length} results`);
     return results;
 }
 
 // Call the selected LLM API based on user preference
 async function callLLMAPI(messages, retries = 3) {
+    console.log('callLLMAPI called with provider:', API_PROVIDER);
     await loadSettings(); // Make sure we have the latest settings
+    console.log('Settings reloaded in callLLMAPI, provider:', API_PROVIDER);
     
     switch(API_PROVIDER) {
         case 'openai':
+            console.log('Calling OpenAI API');
             return callOpenAI(messages, retries);
         case 'huggingface':
+            console.log('Calling Hugging Face API');
             return callHuggingFace(messages, retries);
         case 'gemini':
+            console.log('Calling Gemini API');
             return callGemini(messages, retries);
         case 'ollama':
+            console.log('Calling Ollama API');
             return callOllama(messages, retries);
         default:
+            console.error('Unknown API provider:', API_PROVIDER);
             throw new Error("Unknown API provider selected. Please check your settings.");
     }
 }
@@ -271,9 +312,19 @@ async function callHuggingFace(messages, retries = 3) {
             });
 
             if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                const errorMsg = data.error || `Status code: ${response.status}`;
-                console.error("Hugging Face API error:", data);
+                let errorData;
+                let errorMsg;
+                
+                // Try to parse as JSON, fall back to text
+                try {
+                    errorData = await response.json();
+                    errorMsg = errorData.error || `Status code: ${response.status}`;
+                } catch (jsonError) {
+                    errorData = await response.text();
+                    errorMsg = errorData || `Status code: ${response.status}`;
+                }
+                
+                console.error("Hugging Face API error:", errorData);
                 
                 if (response.status === 401) {
                     throw new Error("Invalid Hugging Face API key. Please check your key in the options page.");
@@ -286,7 +337,16 @@ async function callHuggingFace(messages, retries = 3) {
                 }
             }
 
-            const data = await response.json();
+            let data;
+            
+            // Try to parse response as JSON
+            try {
+                data = await response.json();
+            } catch (jsonError) {
+                console.error("Failed to parse Hugging Face response as JSON:", jsonError);
+                const textResponse = await response.text();
+                throw new Error(`Invalid JSON response from Hugging Face: ${textResponse.substring(0, 200)}`);
+            }
             
             // Different models might have different response formats
             // Adjust based on the actual response structure from the model you're using
@@ -483,6 +543,9 @@ async function callOllama(messages, retries = 3) {
 
 // Analyze comments using the selected LLM
 async function analyzeCommentBatch(comments) {
+    console.log('analyzeCommentBatch called with', comments.length, 'comments');
+    console.log('API Provider:', API_PROVIDER);
+    
     const messages = [
         {
             role: 'system',
@@ -495,15 +558,24 @@ async function analyzeCommentBatch(comments) {
     ];
 
     try {
+        console.log('Calling LLM API for comment analysis...');
         const analysis = await callLLMAPI(messages);
+        console.log('LLM API response for comments:', analysis);
+        
         // Try to parse the response as JSON
         try {
-            return JSON.parse(analysis);
+            const parsed = JSON.parse(analysis);
+            console.log('Successfully parsed comment analysis:', parsed);
+            return parsed;
         } catch (parseError) {
+            console.error('JSON parse error:', parseError);
             // If parsing fails, attempt to extract JSON from the text
             const jsonMatch = analysis.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-                return JSON.parse(jsonMatch[0]);
+                console.log('Found JSON in response, attempting to parse...');
+                const extracted = JSON.parse(jsonMatch[0]);
+                console.log('Successfully extracted and parsed:', extracted);
+                return extracted;
             }
             // If no valid JSON found, create a simple structure
             console.error("Couldn't parse LLM response as JSON:", analysis);
@@ -562,11 +634,34 @@ async function performFactCheck(text) {
 // --- Core Logic Functions ---
 
 async function fetchAndAnalyzeComments(videoId) {
+    console.log('fetchAndAnalyzeComments called for video:', videoId);
     await loadSettings();
-    if (!YOUTUBE_API_KEY || !OPENAI_API_KEY) {
-        throw new Error("API keys not configured");
+    console.log('Settings loaded, API Provider:', API_PROVIDER);
+    
+    // Check if we have API keys for the selected provider
+    switch (API_PROVIDER) {
+        case 'openai':
+            if (!OPENAI_API_KEY) throw new Error("OpenAI API key not configured. Please set it in options.");
+            break;
+        case 'huggingface':
+            if (!HUGGINGFACE_API_KEY) throw new Error("Hugging Face API key not configured. Please set it in options.");
+            break;
+        case 'gemini':
+            if (!GEMINI_API_KEY) throw new Error("Gemini API key not configured. Please set it in options.");
+            break;
+        case 'ollama':
+            if (!OLLAMA_ENDPOINT) throw new Error("Ollama endpoint not configured. Please set it in options.");
+            break;
+        default:
+            throw new Error("Unknown API provider selected. Please check your settings.");
+    }
+    
+    // YouTube API key is still needed for comment fetching
+    if (!YOUTUBE_API_KEY) {
+        throw new Error("YouTube API key not configured. Comments cannot be fetched without it.");
     }
 
+    console.log('API keys validated successfully');
     updatePopupStatus(`Fetching comments for video: ${videoId}...`, false, true);
     
     let comments = [];
@@ -574,16 +669,20 @@ async function fetchAndAnalyzeComments(videoId) {
     let totalFetched = 0;
 
     try {
+        console.log('Fetching comments from YouTube API...');
         do {
             const response = await fetch(
                 `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=100&key=${YOUTUBE_API_KEY}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`
             );
 
             if (!response.ok) {
+                console.error('YouTube API response not ok:', response.status, response.statusText);
                 throw new Error(`YouTube API error: ${response.status}`);
             }
 
             const data = await response.json();
+            console.log('YouTube API response received, items:', data.items?.length || 0);
+            
             const newComments = data.items.map(item => ({
                 text: item.snippet.topLevelComment.snippet.textDisplay,
                 likes: item.snippet.topLevelComment.snippet.likeCount,
@@ -593,13 +692,18 @@ async function fetchAndAnalyzeComments(videoId) {
             comments.push(...newComments);
             totalFetched += newComments.length;
             nextPageToken = data.nextPageToken;
+            
+            console.log(`Fetched ${newComments.length} comments, total: ${totalFetched}`);
 
         } while (nextPageToken && totalFetched < MAX_COMMENTS);
 
+        console.log(`Comment fetching complete. Total comments: ${comments.length}`);
         updatePopupStatus(`Analyzing ${comments.length} comments...`, false, true, 25, 'comments');
 
         // Process comments in batches
+        console.log('Starting batch processing of comments...');
         const analysisResults = await processBatch(comments, BATCH_SIZE, analyzeCommentBatch, 'comments');
+        console.log('Batch processing complete, results:', analysisResults);
 
         // Aggregate results
         const analysis = {
@@ -686,8 +790,303 @@ async function fetchTranscriptFromPage(videoId) {
     }
 }
 
-// Fetch transcript via YouTube API (requires API key)
+// Fetch all available captions for a video
+async function fetchAllAvailableCaptions(videoId) {
+    if (!YOUTUBE_API_KEY) {
+        throw new Error("YouTube API key required for multi-language caption fetching");
+    }
+    
+    updatePopupStatus("Fetching available caption tracks...");
+    
+    // Get all caption tracks
+    const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${YOUTUBE_API_KEY}`
+    );
+    
+    if (!response.ok) {
+        throw new Error(`YouTube API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    if (!data.items || data.items.length === 0) {
+        throw new Error("No captions found for this video");
+    }
+    
+    const captionTracks = data.items;
+    console.log(`Found ${captionTracks.length} caption tracks:`, captionTracks.map(track => ({
+        language: track.snippet.language,
+        name: track.snippet.name,
+        kind: track.snippet.trackKind,
+        audioTrackType: track.snippet.audioTrackType
+    })));
+    
+    // Analyze available languages and build result structure
+    const analysisResult = analyzeCaptionAvailability(captionTracks);
+    const allCaptions = {};
+    const tracksToFetch = [];
+    const missingLanguages = [];
+    const availableLanguages = captionTracks.map(track => track.snippet.language);
+    
+    if (FETCH_ALL_LANGUAGES) {
+        // Fetch all available languages
+        tracksToFetch.push(...captionTracks);
+    } else {
+        // Check each preferred language
+        for (const langCode of PREFERRED_LANGUAGES) {
+            const track = captionTracks.find(track => 
+                track.snippet.language && track.snippet.language.toLowerCase().startsWith(langCode.toLowerCase())
+            );
+            if (track) {
+                tracksToFetch.push(track);
+            } else {
+                // Check if auto-translated version exists
+                const autoTranslatedTrack = captionTracks.find(track => 
+                    track.snippet.language && 
+                    track.snippet.language.toLowerCase().startsWith(langCode.toLowerCase()) &&
+                    track.snippet.trackKind === 'asr'
+                );
+                if (autoTranslatedTrack) {
+                    tracksToFetch.push(autoTranslatedTrack);
+                } else {
+                    missingLanguages.push(langCode);
+                }
+            }
+        }
+        
+        // If no preferred languages found, fall back to the first available track
+        if (tracksToFetch.length === 0 && captionTracks.length > 0) {
+            tracksToFetch.push(captionTracks[0]);
+        }
+    }
+    
+    console.log(`Will fetch ${tracksToFetch.length} caption tracks`);
+    
+    if (missingLanguages.length > 0) {
+        console.log(`Missing preferred languages: ${missingLanguages.join(', ')}`);
+        console.log(`Available languages: ${availableLanguages.join(', ')}`);
+    }
+    
+    // Fetch caption content for each track
+    const fetchErrors = [];
+    for (let i = 0; i < tracksToFetch.length; i++) {
+        const track = tracksToFetch[i];
+        const progress = Math.round(((i + 1) / tracksToFetch.length) * 100);
+        updatePopupStatus(`Fetching captions: ${track.snippet.name || track.snippet.language} (${progress}%)...`);
+        
+        try {
+            const captionContent = await fetchCaptionTrack(track.id);
+            const languageInfo = {
+                code: track.snippet.language,
+                name: track.snippet.name,
+                kind: track.snippet.trackKind,
+                audioTrackType: track.snippet.audioTrackType,
+                content: captionContent,
+                isAutoTranslated: track.snippet.trackKind === 'asr'
+            };
+            
+            allCaptions[track.snippet.language] = languageInfo;
+            console.log(`Successfully fetched captions for: ${track.snippet.language} (${track.snippet.name})`);
+        } catch (error) {
+            console.error(`Failed to fetch caption track ${track.snippet.language}:`, error);
+            fetchErrors.push({
+                language: track.snippet.language,
+                name: track.snippet.name,
+                error: error.message
+            });
+            // Continue with other languages even if one fails
+        }
+    }
+    
+    if (Object.keys(allCaptions).length === 0) {
+        let errorMessage = "Failed to fetch any caption tracks";
+        if (missingLanguages.length > 0) {
+            errorMessage += `. Missing languages: ${missingLanguages.join(', ')}. Available languages: ${availableLanguages.join(', ')}`;
+        }
+        if (fetchErrors.length > 0) {
+            errorMessage += `. Fetch errors: ${fetchErrors.map(e => `${e.language}: ${e.error}`).join('; ')}`;
+        }
+        throw new Error(errorMessage);
+    }
+    
+    // Return enhanced result with language availability info
+    return {
+        captions: allCaptions,
+        availableLanguages: availableLanguages,
+        missingLanguages: missingLanguages,
+        fetchErrors: fetchErrors,
+        totalTracksFound: captionTracks.length,
+        totalTracksFetched: Object.keys(allCaptions).length
+    };
+}
+
+// Fetch content for a specific caption track
+async function fetchCaptionTrack(captionId) {
+    const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/captions/${captionId}?key=${YOUTUBE_API_KEY}&tfmt=srt`
+    );
+    
+    if (!response.ok) {
+        throw new Error(`Failed to fetch caption track: ${response.status}`);
+    }
+    
+    // The response should be SRT format text
+    const captionText = await response.text();
+    return captionText;
+}
+
+// Parse SRT format captions to extract text with timestamps
+function parseSRTCaptions(srtContent) {
+    const entries = srtContent.split('\n\n').filter(entry => entry.trim());
+    const parsedCaptions = [];
+    
+    for (const entry of entries) {
+        const lines = entry.split('\n');
+        if (lines.length >= 3) {
+            const index = lines[0].trim();
+            const timestamp = lines[1].trim();
+            const text = lines.slice(2).join(' ').trim();
+            
+            // Extract start time for sorting/referencing
+            const timeMatch = timestamp.match(/(\d{2}:\d{2}:\d{2},\d{3})/);
+            const startTime = timeMatch ? timeMatch[1] : null;
+            
+            parsedCaptions.push({
+                index: parseInt(index),
+                timestamp: timestamp,
+                startTime: startTime,
+                text: text
+            });
+        }
+    }
+    
+    return parsedCaptions;
+}
+
+// Convert SRT captions to simple transcript format
+function convertSRTToTranscript(srtContent) {
+    const captions = parseSRTCaptions(srtContent);
+    return captions.map(caption => `[${caption.startTime}] ${caption.text}`).join('\n');
+}
+
+// Fetch transcript via YouTube API (enhanced for multiple languages)
 async function fetchTranscriptViaAPI(videoId) {
+    try {
+        // Check if we should fetch multiple languages
+        if (FETCH_ALL_LANGUAGES || PREFERRED_LANGUAGES.length > 1) {
+            const captionResult = await fetchAllAvailableCaptions(videoId);
+            const allCaptions = captionResult.captions;
+            
+            // Return the multi-language structure with enhanced metadata
+            return {
+                type: 'multi-language',
+                languages: Object.keys(allCaptions),
+                languageData: allCaptions,
+                primaryLanguage: Object.keys(allCaptions)[0], // First available language as primary
+                combinedTranscript: createCombinedTranscript(allCaptions),
+                metadata: {
+                    availableLanguages: captionResult.availableLanguages,
+                    missingLanguages: captionResult.missingLanguages,
+                    fetchErrors: captionResult.fetchErrors,
+                    totalTracksFound: captionResult.totalTracksFound,
+                    totalTracksFetched: captionResult.totalTracksFetched,
+                    hasLimitedSupport: captionResult.missingLanguages.some(lang => hasLimitedCaptionSupport(lang)),
+                    limitedSupportLanguages: captionResult.missingLanguages.filter(lang => hasLimitedCaptionSupport(lang))
+                }
+            };
+        } else {
+            // Single language mode (backward compatibility)
+            const captionResult = await fetchAllAvailableCaptions(videoId);
+            const allCaptions = captionResult.captions;
+            const primaryLang = Object.keys(allCaptions)[0];
+            const primaryCaption = allCaptions[primaryLang];
+            
+            return convertSRTToTranscript(primaryCaption.content);
+        }
+    } catch (error) {
+        console.error("Multi-language caption fetch failed:", error);
+        
+        // Enhanced error handling with language-specific messages
+        if (error.message.includes('Missing languages:')) {
+            // Extract missing languages from error message
+            const missingLangsMatch = error.message.match(/Missing languages: ([^.]+)/);
+            if (missingLangsMatch) {
+                const missingLanguages = missingLangsMatch[1].split(', ');
+                const limitedSupportLangs = missingLanguages.filter(lang => hasLimitedCaptionSupport(lang));
+                
+                if (limitedSupportLangs.length > 0 && BROWSER_EXTRACTION_ENABLED) {
+                    console.log(`Attempting browser player extraction for limited-support languages: ${limitedSupportLangs.join(', ')}`);
+                    
+                    try {
+                        const browserResult = await fetchCaptionsViaBrowserPlayer(videoId, limitedSupportLangs);
+                        
+                        if (browserResult.totalTracksFetched > 0) {
+                            // Convert browser extraction result to multi-language format
+                            return {
+                                type: 'multi-language',
+                                languages: Object.keys(browserResult.captions),
+                                languageData: browserResult.captions,
+                                primaryLanguage: Object.keys(browserResult.captions)[0],
+                                combinedTranscript: createCombinedTranscript(browserResult.captions),
+                                metadata: {
+                                    availableLanguages: browserResult.availableLanguages,
+                                    missingLanguages: browserResult.missingLanguages,
+                                    fetchErrors: browserResult.fetchErrors,
+                                    totalTracksFound: browserResult.totalTracksFound,
+                                    totalTracksFetched: browserResult.totalTracksFetched,
+                                    extractionMethod: 'browser-player',
+                                    hasLimitedSupport: true,
+                                    limitedSupportLanguages: limitedSupportLangs
+                                }
+                            };
+                        }
+                    } catch (browserError) {
+                        console.error("Browser player extraction also failed:", browserError);
+                        // Continue to show the original helpful error message
+                    }
+                    
+                    const langNames = limitedSupportLangs.map(lang => getLanguageName(lang)).join(', ');
+                    throw new Error(`Captions not available for ${langNames}. These languages have limited auto-generated caption support on YouTube. Browser player extraction was attempted but failed. Try using manual transcript mode or check if the video has manually uploaded captions.`);
+                }
+            }
+        }
+        
+        // Try browser extraction as general fallback if enabled
+        if (BROWSER_EXTRACTION_ENABLED) {
+            console.log("Attempting browser player extraction as fallback...");
+            try {
+                const browserResult = await fetchCaptionsViaBrowserPlayer(videoId, PREFERRED_LANGUAGES);
+                
+                if (browserResult.totalTracksFetched > 0) {
+                    return {
+                        type: 'multi-language',
+                        languages: Object.keys(browserResult.captions),
+                        languageData: browserResult.captions,
+                        primaryLanguage: Object.keys(browserResult.captions)[0],
+                        combinedTranscript: createCombinedTranscript(browserResult.captions),
+                        metadata: {
+                            availableLanguages: browserResult.availableLanguages,
+                            missingLanguages: browserResult.missingLanguages,
+                            fetchErrors: browserResult.fetchErrors,
+                            totalTracksFound: browserResult.totalTracksFound,
+                            totalTracksFetched: browserResult.totalTracksFetched,
+                            extractionMethod: 'browser-player-fallback',
+                            hasLimitedSupport: false,
+                            limitedSupportLanguages: []
+                        }
+                    };
+                }
+            } catch (browserError) {
+                console.error("Browser player fallback extraction failed:", browserError);
+            }
+        }
+        
+        // Fall back to the original single-language logic
+        return await fetchSingleLanguageTranscript(videoId);
+    }
+}
+
+// Original single-language transcript fetching (fallback)
+async function fetchSingleLanguageTranscript(videoId) {
     // Use YouTube Data API to get video caption tracks
     const response = await fetch(
         `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${YOUTUBE_API_KEY}`
@@ -709,17 +1108,30 @@ async function fetchTranscriptViaAPI(videoId) {
     ) || captionTracks[0];
     
     // Request the caption track content
-    const captionId = englishTrack.id;
-    const transcriptResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/captions/${captionId}?key=${YOUTUBE_API_KEY}`
-    );
-    
-    if (!transcriptResponse.ok) {
-        throw new Error(`Failed to fetch caption track: ${transcriptResponse.status}`);
+    const captionContent = await fetchCaptionTrack(englishTrack.id);
+    return convertSRTToTranscript(captionContent);
+}
+
+// Create a combined transcript from multiple languages
+function createCombinedTranscript(allCaptions) {
+    const languages = Object.keys(allCaptions);
+    if (languages.length === 1) {
+        return convertSRTToTranscript(allCaptions[languages[0]].content);
     }
     
-    const transcriptData = await transcriptResponse.json();
-    return transcriptData.snippet.text;
+    let combined = "=== MULTI-LANGUAGE TRANSCRIPT ===\n\n";
+    
+    for (const [langCode, langData] of Object.entries(allCaptions)) {
+        const languageName = getLanguageName(langCode);
+        const typeInfo = langData.isAutoTranslated ? ' (Auto-translated)' : 
+                        langData.kind === 'asr' ? ' (Auto-generated)' : '';
+        
+        combined += `--- ${languageName} (${langCode.toUpperCase()})${typeInfo} ---\n`;
+        combined += convertSRTToTranscript(langData.content);
+        combined += "\n\n";
+    }
+    
+    return combined;
 }
 
 // Fetch transcript via page extraction (no API key required)
@@ -794,356 +1206,199 @@ function extractTranscriptFromPage() {
     });
 }
 
-// RAG implementation using the selected LLM API
-async function performRagAnalysis(videoId, query) {
-    await loadSettings();
-    
-    // Check if we have API keys for the selected provider
-    switch (API_PROVIDER) {
-        case 'openai':
-            if (!OPENAI_API_KEY) throw new Error("OpenAI API key not configured. Please set it in options.");
-            break;
-        case 'huggingface':
-            if (!HUGGINGFACE_API_KEY) throw new Error("Hugging Face API key not configured. Please set it in options.");
-            break;
-        case 'gemini':
-            if (!GEMINI_API_KEY) throw new Error("Gemini API key not configured. Please set it in options.");
-            break;
-        case 'ollama':
-            if (!OLLAMA_ENDPOINT) throw new Error("Ollama endpoint not configured. Please set it in options.");
-            break;
-        default:
-            throw new Error("Unknown API provider selected. Please check your settings.");
-    }
-    
-    updatePopupStatus("Fetching video information...");
-    
-    // First, get the transcript
-    let transcript;
-    try {
-        transcript = await fetchTranscriptFromPage(videoId);
-    } catch (error) {
-        throw new Error(`Failed to get transcript: ${error.message}`);
-    }
-    
-    // Get video metadata
-    let videoTitle = "YouTube Video";
-    let videoAuthor = "Unknown Creator";
-    
-    try {
-        if (YOUTUBE_API_KEY) {
-            const response = await fetch(
-                `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YOUTUBE_API_KEY}`
-            );
+// Fetch captions via browser player extraction (alternative method)
+async function fetchCaptionsViaBrowserPlayer(videoId, preferredLanguages = []) {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+            if (!tabs[0]?.id) {
+                reject(new Error("Cannot access active tab"));
+                return;
+            }
             
-            if (response.ok) {
-                const data = await response.json();
-                if (data.items && data.items.length > 0) {
-                    videoTitle = data.items[0].snippet.title;
-                    videoAuthor = data.items[0].snippet.channelTitle;
-                }
-            }
-        } else {
-            // Try to get title from document title if we're on YouTube
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                const tab = tabs[0];
-                if (tab && tab.url && tab.url.includes('youtube.com/watch') && tab.title) {
-                    videoTitle = tab.title.replace(' - YouTube', '');
-                }
-            });
-        }
-    } catch (error) {
-        console.error("Error fetching video metadata:", error);
-        // Continue with default values
-    }
-    
-    updatePopupStatus(`Processing with RAG using ${API_PROVIDER.toUpperCase()}...`);
-    
-    // Chunking the transcript for better retrieval
-    const chunks = chunkText(transcript, CHUNK_SIZE, Math.floor(CHUNK_SIZE * 0.2));
-    
-    // Implement RAG processing
-    try {
-        // Adjust chunk handling based on the provider's capabilities
-        let chunkedContent;
-        
-        // Some providers might have smaller context windows
-        if (API_PROVIDER === 'huggingface' || API_PROVIDER === 'ollama') {
-            // For smaller context models, use fewer chunks or summarize chunks first
-            const relevantChunks = selectRelevantChunks(chunks, query);
-            chunkedContent = relevantChunks.map((chunk, i) => `CHUNK ${i+1}:\n${chunk}`).join('\n\n');
-        } else {
-            // For larger context models like OpenAI and Gemini, use all chunks
-            chunkedContent = chunks.map((chunk, i) => `CHUNK ${i+1}:\n${chunk}`).join('\n\n');
-        }
-        
-        const messages = [
-            {
-                role: 'system',
-                content: `You are analyzing a YouTube video titled "${videoTitle}" by "${videoAuthor}". 
-                Use the transcript chunks to answer the user's question. 
-                Include timestamps from the transcript when relevant.
-                If the answer isn't in the transcript, clearly state that.`
-            },
-            {
-                role: 'user',
-                content: `The transcript of the video is split into chunks for analysis:
-                ${chunkedContent}
+            try {
+                updatePopupStatus("Extracting captions from browser player...");
                 
-                Based on this information, please answer the following question: ${query}`
-            }
-        ];
-        
-        const response = await callLLMAPI(messages);
-        
-        // Extract potential sources from the transcript based on the answer
-        const sources = extractRelevantSources(transcript, response);
-        
-        return {
-            answer: response,
-            sources: sources,
-            provider: API_PROVIDER
-        };
-    } catch (error) {
-        console.error("RAG processing error:", error);
-        throw error;
-    }
-}
-
-// Helper function to select the most relevant chunks for smaller context window models
-function selectRelevantChunks(chunks, query) {
-    // Simple keyword matching for relevance
-    const keywords = query.toLowerCase().split(' ')
-        .filter(word => word.length > 3)
-        .filter(word => !["what", "when", "where", "which", "whose", "whom", "will", "this", "that", "these", "those", "with", "about", "from"].includes(word));
-    
-    // Score each chunk by counting keywords
-    const scoredChunks = chunks.map(chunk => {
-        const lowerChunk = chunk.toLowerCase();
-        let score = 0;
-        keywords.forEach(keyword => {
-            const regex = new RegExp(keyword, 'g');
-            const matches = lowerChunk.match(regex);
-            if (matches) score += matches.length;
-        });
-        return { chunk, score };
-    });
-    
-    // Sort by score and take top chunks
-    scoredChunks.sort((a, b) => b.score - a.score);
-    const maxChunks = 3; // Adjust based on model capacity
-    
-    return scoredChunks.slice(0, maxChunks).map(item => item.chunk);
-}
-
-// Helper function to chunk text for RAG
-function chunkText(text, chunkSize = CHUNK_SIZE, overlap = Math.floor(CHUNK_SIZE * 0.2)) {
-    const chunks = [];
-    let i = 0;
-    
-    // Default to global CHUNK_SIZE if not specified
-    if (!chunkSize || chunkSize < 100) {
-        chunkSize = CHUNK_SIZE;
-    }
-    
-    // Default overlap to 20% if not specified
-    if (!overlap || overlap < 10) {
-        overlap = Math.floor(chunkSize * 0.2);
-    }
-    
-    while (i < text.length) {
-        const chunk = text.substring(i, i + chunkSize);
-        chunks.push(chunk);
-        i += (chunkSize - overlap);
-    }
-    
-    console.log(`Text chunked into ${chunks.length} pieces (size: ${chunkSize}, overlap: ${overlap})`);
-    return chunks;
-}
-
-// Helper function to extract relevant sources from the transcript
-function extractRelevantSources(transcript, answer) {
-    const sources = [];
-    const transcriptLines = transcript.split('\n');
-    
-    // Find timestamps mentioned in the answer
-    const timestampRegex = /\[(\d+:\d+)\]/g;
-    const mentionedTimestamps = Array.from(answer.matchAll(timestampRegex))
-        .map(match => match[1]);
-        
-    // If timestamps are mentioned, include those segments
-    if (mentionedTimestamps.length > 0) {
-        mentionedTimestamps.forEach(timestamp => {
-            const matchingLine = transcriptLines.find(line => line.includes(`[${timestamp}]`));
-            if (matchingLine) {
-                sources.push(matchingLine);
-            }
-        });
-    } 
-    
-    // If no specific timestamps, find keyword matches
-    if (sources.length === 0) {
-        // Extract keywords from the answer (non-stopwords)
-        const keywords = extractKeywords(answer);
-        
-        // Find transcript lines containing these keywords
-        keywords.forEach(keyword => {
-            transcriptLines.forEach(line => {
-                if (line.toLowerCase().includes(keyword.toLowerCase()) && 
-                    !sources.includes(line)) {
-                    sources.push(line);
+                // Send message to content script to extract captions
+                const response = await chrome.tabs.sendMessage(tabs[0].id, {
+                    action: "extractCaptionsFromPlayer",
+                    preferredLanguages: preferredLanguages.length > 0 ? preferredLanguages : PREFERRED_LANGUAGES
+                });
+                
+                if (response && response.success) {
+                    const results = response.results;
+                    
+                    // Convert browser extraction results to our format
+                    const formattedCaptions = {};
+                    const availableLanguages = results.availableLanguages.map(lang => lang.code);
+                    const missingLanguages = [];
+                    const fetchErrors = results.errors || [];
+                    
+                    // Process extracted captions
+                    for (const [langCode, captionData] of Object.entries(results.extractedCaptions)) {
+                        const langInfo = results.availableLanguages.find(lang => lang.code === langCode);
+                        formattedCaptions[langCode] = {
+                            code: langCode,
+                            name: langInfo?.name || getLanguageName(langCode),
+                            kind: 'browser-extracted',
+                            audioTrackType: 'primary',
+                            content: captionData.transcript,
+                            extractedSegments: captionData.extractedSegments,
+                            isAutoTranslated: false
+                        };
+                    }
+                    
+                    // Check for missing preferred languages
+                    if (preferredLanguages.length > 0) {
+                        for (const prefLang of preferredLanguages) {
+                            if (!availableLanguages.some(lang => lang.startsWith(prefLang))) {
+                                missingLanguages.push(prefLang);
+                            }
+                        }
+                    }
+                    
+                    const result = {
+                        captions: formattedCaptions,
+                        availableLanguages: availableLanguages,
+                        missingLanguages: missingLanguages,
+                        fetchErrors: fetchErrors,
+                        totalTracksFound: results.availableLanguages.length,
+                        totalTracksFetched: Object.keys(formattedCaptions).length,
+                        extractionMethod: 'browser-player'
+                    };
+                    
+                    resolve(result);
+                } else {
+                    reject(new Error(response?.error || "Failed to extract captions from browser player"));
                 }
-            });
+            } catch (error) {
+                reject(new Error(`Browser player extraction failed: ${error.message}`));
+            }
         });
-        
-        // Limit to 5 most relevant sources
-        sources.splice(5);
-    }
-    
-    return sources;
-}
-
-// Helper function to extract keywords from text
-function extractKeywords(text) {
-    const stopwords = ["a", "about", "above", "after", "again", "against", "all", "am", "an", "and", 
-                      "any", "are", "as", "at", "be", "because", "been", "before", "being", "below", 
-                      "between", "both", "but", "by", "could", "did", "do", "does", "doing", "down", 
-                      "during", "each", "few", "for", "from", "further", "had", "has", "have", "having", 
-                      "he", "her", "here", "hers", "herself", "him", "himself", "his", "how", "i", "if", 
-                      "in", "into", "is", "it", "its", "itself", "just", "me", "more", "most", "my", 
-                      "myself", "no", "nor", "not", "now", "of", "off", "on", "once", "only", "or", 
-                      "other", "our", "ours", "ourselves", "out", "over", "own", "same", "she", "should", 
-                      "so", "some", "such", "than", "that", "the", "their", "theirs", "them", "themselves", 
-                      "then", "there", "these", "they", "this", "those", "through", "to", "too", "under", 
-                      "until", "up", "very", "was", "we", "were", "what", "when", "where", "which", "while", 
-                      "who", "whom", "why", "will", "with", "would", "you", "your", "yours", "yourself", "yourselves"];
-                      
-    const words = text.toLowerCase()
-        .replace(/[^\w\s]/g, '')
-        .split(/\s+/)
-        .filter(word => word.length > 3 && !stopwords.includes(word));
-        
-    // Get unique words and sort by length (longer words are typically more specific)
-    const uniqueWords = [...new Set(words)].sort((a, b) => b.length - a.length);
-    
-    // Return the top 10 keywords
-    return uniqueWords.slice(0, 10);
-}
-
-// Send data to popup
-function sendDataToPopup(action, data) {
-    chrome.runtime.sendMessage({
-        action: action,
-        data: data
-    }).catch(err => {
-        console.error("Error sending data to popup:", err);
     });
 }
 
-// --- Cache Management ---
-function getCachedTranscript(videoId) {
-    const cachedItem = transcriptCache[videoId];
-    if (!cachedItem) return null;
-    
-    // Check if cache is still valid
-    if (Date.now() - cachedItem.timestamp < CACHE_TIMEOUT) {
-        console.log(`Using cached transcript for video ${videoId}`);
-        return cachedItem.data;
-    } else {
-        // Cache expired
-        delete transcriptCache[videoId];
-        return null;
-    }
+// Get available caption tracks from browser player
+async function getAvailableCaptionTracksFromPlayer(videoId) {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+            if (!tabs[0]?.id) {
+                reject(new Error("Cannot access active tab"));
+                return;
+            }
+            
+            try {
+                updatePopupStatus("Checking available caption tracks in player...");
+                
+                const response = await chrome.tabs.sendMessage(tabs[0].id, {
+                    action: "getAvailableCaptionTracks"
+                });
+                
+                if (response && response.success) {
+                    resolve(response.tracks);
+                } else {
+                    reject(new Error(response?.error || "Failed to get caption tracks from player"));
+                }
+            } catch (error) {
+                reject(new Error(`Failed to access player caption tracks: ${error.message}`));
+            }
+        });
+    });
 }
 
-function cacheTranscript(videoId, data) {
-    transcriptCache[videoId] = {
-        data: data,
-        timestamp: Date.now()
-    };
-    console.log(`Cached transcript for video ${videoId}`);
+// Analyze caption availability and provide detailed language information
+function analyzeCaptionAvailability(captionTracks) {
+    const availableLanguages = new Map();
+    const autoTranslatedLanguages = new Set();
+    const originalLanguages = new Set();
     
-    // Clean up old cache entries
-    cleanCache(transcriptCache);
-}
-
-function getCachedCommentAnalysis(videoId, provider) {
-    const cacheKey = `${videoId}_${provider}`;
-    const cachedItem = commentAnalysisCache[cacheKey];
-    if (!cachedItem) return null;
-    
-    // Check if cache is still valid
-    if (Date.now() - cachedItem.timestamp < CACHE_TIMEOUT) {
-        console.log(`Using cached comment analysis for video ${videoId} (${provider})`);
-        return cachedItem.data;
-    } else {
-        // Cache expired
-        delete commentAnalysisCache[cacheKey];
-        return null;
-    }
-}
-
-function cacheCommentAnalysis(videoId, provider, data) {
-    const cacheKey = `${videoId}_${provider}`;
-    commentAnalysisCache[cacheKey] = {
-        data: data,
-        timestamp: Date.now()
-    };
-    console.log(`Cached comment analysis for video ${videoId} (${provider})`);
-    
-    // Clean up old cache entries
-    cleanCache(commentAnalysisCache);
-}
-
-function getCachedRagAnalysis(videoId, query, provider) {
-    const cacheKey = `${videoId}_${query}_${provider}`;
-    const cachedItem = ragAnalysisCache[cacheKey];
-    if (!cachedItem) return null;
-    
-    // Check if cache is still valid
-    if (Date.now() - cachedItem.timestamp < CACHE_TIMEOUT) {
-        console.log(`Using cached RAG analysis for video ${videoId}, query: ${query.substring(0, 20)}... (${provider})`);
-        return cachedItem.data;
-    } else {
-        // Cache expired
-        delete ragAnalysisCache[cacheKey];
-        return null;
-    }
-}
-
-function cacheRagAnalysis(videoId, query, provider, data) {
-    const cacheKey = `${videoId}_${query}_${provider}`;
-    ragAnalysisCache[cacheKey] = {
-        data: data,
-        timestamp: Date.now()
-    };
-    console.log(`Cached RAG analysis for video ${videoId}, query: ${query.substring(0, 20)}... (${provider})`);
-    
-    // Clean up old cache entries
-    cleanCache(ragAnalysisCache);
-}
-
-function cleanCache(cache) {
-    const now = Date.now();
-    const cacheKeys = Object.keys(cache);
-    
-    // If cache has more than 20 items, remove oldest entries
-    if (cacheKeys.length > 20) {
-        const oldestKeys = cacheKeys
-            .map(key => ({ key, timestamp: cache[key].timestamp }))
-            .sort((a, b) => a.timestamp - b.timestamp)
-            .slice(0, cacheKeys.length - 20)
-            .map(item => item.key);
+    for (const track of captionTracks) {
+        const langCode = track.snippet.language;
+        const trackInfo = {
+            code: langCode,
+            name: track.snippet.name,
+            kind: track.snippet.trackKind,
+            audioTrackType: track.snippet.audioTrackType,
+            isAutoGenerated: track.snippet.trackKind === 'asr',
+            isAutoTranslated: track.snippet.trackKind === 'asr' && track.snippet.audioTrackType !== 'primary'
+        };
         
-        oldestKeys.forEach(key => delete cache[key]);
-    }
-    
-    // Remove expired entries
-    cacheKeys.forEach(key => {
-        if (now - cache[key].timestamp > CACHE_TIMEOUT) {
-            delete cache[key];
+        if (!availableLanguages.has(langCode)) {
+            availableLanguages.set(langCode, []);
         }
-    });
+        availableLanguages.get(langCode).push(trackInfo);
+        
+        if (trackInfo.isAutoTranslated) {
+            autoTranslatedLanguages.add(langCode);
+        } else {
+            originalLanguages.add(langCode);
+        }
+    }
+    
+    return {
+        availableLanguages,
+        autoTranslatedLanguages,
+        originalLanguages,
+        totalTracks: captionTracks.length,
+        languageCount: availableLanguages.size
+    };
+}
+
+// Get language name from language code (for better user display)
+function getLanguageName(langCode) {
+    const languageNames = {
+        'en': 'English',
+        'es': 'Spanish',
+        'fr': 'French',
+        'de': 'German',
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'zh': 'Chinese',
+        'zh-CN': 'Chinese (Simplified)',
+        'zh-TW': 'Chinese (Traditional)',
+        'ar': 'Arabic',
+        'hi': 'Hindi',
+        'pt': 'Portuguese',
+        'ru': 'Russian',
+        'it': 'Italian',
+        'nl': 'Dutch',
+        'sv': 'Swedish',
+        'da': 'Danish',
+        'no': 'Norwegian',
+        'fi': 'Finnish',
+        'pl': 'Polish',
+        'tr': 'Turkish',
+        'th': 'Thai',
+        'vi': 'Vietnamese',
+        'ta': 'Tamil',
+        'te': 'Telugu',
+        'bn': 'Bengali',
+        'ur': 'Urdu',
+        'ml': 'Malayalam',
+        'kn': 'Kannada',
+        'gu': 'Gujarati',
+        'pa': 'Punjabi',
+        'or': 'Oriya',
+        'as': 'Assamese',
+        'mr': 'Marathi'
+    };
+    
+    return languageNames[langCode] || langCode.toUpperCase();
+}
+
+// Check if a language has limited caption support
+function hasLimitedCaptionSupport(langCode) {
+    // Languages that typically have limited auto-generated caption support
+    const limitedSupportLanguages = [
+        'ta', 'te', 'bn', 'ur', 'ml', 'kn', 'gu', 'pa', 'or', 'as', 'mr', // Indian languages
+        'my', 'km', 'lo', 'si', 'ne', 'dv', // Southeast Asian languages
+        'am', 'ti', 'om', 'so', 'sw', 'zu', 'xh', 'af', // African languages
+        'is', 'fo', 'ga', 'cy', 'mt', 'lb', 'eu', 'ca', // European minority languages
+        'he', 'yi', 'fa', 'ps', 'ku', 'az', 'kk', 'ky', 'uz', 'tg', 'tk', // Middle Eastern/Central Asian
+        'ka', 'hy', 'be', 'lv', 'lt', 'et', 'mk', 'bg', 'hr', 'sr', 'bs', 'sq', 'sl', // Eastern European
+        'id', 'ms', 'tl', 'ceb', 'haw', 'mg', 'sm', 'to', 'fj' // Other Pacific/Asian languages
+    ];
+    
+    return limitedSupportLanguages.includes(langCode);
 }
 
 // --- Event Listeners ---
@@ -1164,7 +1419,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .then(transcript => {
                 // Cache the transcript
                 cacheTranscript(request.videoId, transcript);
-                sendDataToPopup("displayTranscript", transcript);
+                
+                // Handle both multi-language and single-language transcripts
+                if (transcript && typeof transcript === 'object' && transcript.type === 'multi-language') {
+                    // Send multi-language transcript with language information
+                    sendDataToPopup("displayTranscript", {
+                        type: 'multi-language',
+                        languages: Object.keys(transcript.languages),
+                        primaryLanguage: transcript.primaryLanguage,
+                        combinedTranscript: transcript.combinedTranscript,
+                        languageData: transcript.languages
+                    });
+                } else {
+                    // Send single-language transcript (backward compatibility)
+                    sendDataToPopup("displayTranscript", transcript);
+                }
             })
             .catch(error => {
                 console.error("Transcript error:", error);
@@ -1178,9 +1447,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === "analyzeComments") {
+        console.log('analyzeComments request received for video:', request.videoId);
+        
         // First check the cache
         const cachedAnalysis = getCachedCommentAnalysis(request.videoId, API_PROVIDER);
         if (cachedAnalysis) {
+            console.log('Using cached comment analysis');
             chrome.runtime.sendMessage({
                 action: "displayCommentAnalysis",
                 data: {
@@ -1192,9 +1464,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return true;
         }
         
+        console.log('No cached analysis found, performing new analysis...');
         // If not in cache, perform analysis
         fetchAndAnalyzeComments(request.videoId)
             .then(result => {
+                console.log('Comment analysis completed:', result);
                 // Cache the analysis
                 cacheCommentAnalysis(request.videoId, API_PROVIDER, result);
                 chrome.runtime.sendMessage({
@@ -1217,9 +1491,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     if (request.action === "performRagAnalysis") {
+        console.log('performRagAnalysis request received for video:', request.videoId, 'query:', request.query);
+        
         // First check the cache
         const cachedRagAnalysis = getCachedRagAnalysis(request.videoId, request.query, API_PROVIDER);
         if (cachedRagAnalysis) {
+            console.log('Using cached RAG analysis');
             chrome.runtime.sendMessage({
                 action: "displayRagAnalysis",
                 data: {
@@ -1231,9 +1508,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return true;
         }
         
+        console.log('No cached RAG analysis found, performing new analysis...');
         // If not in cache, perform analysis
         performRagAnalysis(request.videoId, request.query)
             .then(result => {
+                console.log('RAG analysis completed:', result);
                 // Cache the RAG analysis
                 cacheRagAnalysis(request.videoId, request.query, API_PROVIDER, result);
                 chrome.runtime.sendMessage({
@@ -1248,6 +1527,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.error("RAG analysis error:", error);
                 chrome.runtime.sendMessage({
                     action: "displayRagAnalysis",
+                    error: error.message
+                });
+                updatePopupStatus(error.message, true, false);
+            });
+        return true;
+    }
+
+    if (request.action === "performFactCheck") {
+        console.log('performFactCheck request received for text:', request.text?.substring(0, 50) + '...');
+        
+        performFactCheck(request.text)
+            .then(result => {
+                console.log('Fact-check completed:', result);
+                chrome.runtime.sendMessage({
+                    action: "displayFactCheck",
+                    data: {
+                        ...result,
+                        provider: API_PROVIDER
+                    }
+                });
+            })
+            .catch(error => {
+                console.error("Fact-check error:", error);
+                chrome.runtime.sendMessage({
+                    action: "displayFactCheck",
                     error: error.message
                 });
                 updatePopupStatus(error.message, true, false);
@@ -1271,3 +1575,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     return false;
 });
+
+// Listen for storage changes to reload settings
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local') {
+        console.log('Storage changed, reloading settings...', changes);
+        loadSettings();
+    }
+});
+
+// Initialize extension on startup
+chrome.runtime.onStartup.addListener(() => {
+    console.log('Extension starting up, loading settings...');
+    loadSettings();
+});
+
+// Initialize extension on install
+chrome.runtime.onInstalled.addListener(() => {
+    console.log('Extension installed/updated, loading settings and setting up context menu...');
+    loadSettings();
+    setupContextMenu();
+});
+
+// Set up context menu for fact-checking
+function setupContextMenu() {
+    chrome.contextMenus.removeAll(() => {
+        chrome.contextMenus.create({
+            id: "factCheckSelection",
+            title: "Fact-Check Selection",
+            contexts: ["selection"],
+            documentUrlPatterns: ["*://www.youtube.com/*"]
+        });
+    });
+}
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "factCheckSelection") {
+        if (info.selectionText) {
+            console.log('Fact-check requested for:', info.selectionText);
+            
+            // Send the selected text for fact-checking
+            chrome.runtime.sendMessage({
+                action: "performFactCheck",
+                text: info.selectionText,
+                tabId: tab.id
+            }).catch(err => console.error("Error sending fact-check message:", err));
+        }
+    }
+});
+
+// Load settings on extension start
+loadSettings();

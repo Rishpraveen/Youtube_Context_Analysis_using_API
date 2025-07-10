@@ -16,6 +16,7 @@
       <button id="tab-transcript" class="tab-button active">Transcript</button>
       <button id="tab-comments" class="tab-button">Comments</button>
       <button id="tab-rag" class="tab-button">RAG Analysis</button>
+      <button id="tab-factcheck" class="tab-button">Fact Check</button>
     </div>
     
     <div id="tab-content-transcript" class="tab-content active">
@@ -65,16 +66,21 @@
         RAG analysis will appear here...
       </div>
     </div>
+
+    <div id="tab-content-factcheck" class="tab-content">
+      <div id="factCheckInfo" class="info-area">
+        Select text in the transcript or page, then right-click and choose "Fact-Check Selection".
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar"></div>
+      </div>
+      <div id="factCheckResult" class="result-area">
+        Fact-check results will appear here...
+      </div>
+    </div>
   </div>
 
   <hr>
-
-  <div id="factCheckInfo" class="info-area">
-    Select text in the transcript or page, then right-click and choose "Fact-Check Selection".
-  </div>
-  <div id="factCheckResult" class="result-area">
-    Fact-check results will appear here...
-  </div>
 
   <div id="status" class="status-area"></div>
 

@@ -234,7 +234,84 @@ input[type="checkbox"] {
     margin-right: 5px;
 }
 
-/* Responsive design */
+/* Language selector styles */
+.language-selector {
+    margin-top: 10px;
+}
+
+.language-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+}
+
+.language-checkboxes label {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+    font-size: 13px;
+}
+
+.language-checkboxes label:hover {
+    background-color: #e8f4fd;
+}
+
+.language-checkboxes input[type="checkbox"] {
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+/* Enhanced help text for language settings */
+.language-selector .help-text {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #e8f4fd;
+    border-radius: 4px;
+    border-left: 4px solid #2196f3;
+}
+
+.language-selector .help-text::before {
+    content: "💡 ";
+    font-size: 14px;
+}
+
+/* Limited support indicator styles */
+.limited-support-indicator {
+    font-size: 12px;
+    color: #ff9800;
+    margin-left: 4px;
+    cursor: help;
+}
+
+.limited-support-indicator:hover::after {
+    content: "This language may not have auto-generated captions available on most videos. Consider using manual transcript mode.";
+    position: absolute;
+    background: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: normal;
+    width: 250px;
+    z-index: 1000;
+    margin-top: 20px;
+    margin-left: -125px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+#languagePreferenceGroup.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 @media (max-width: 600px) {
     .container {
         padding: 15px;
@@ -254,5 +331,12 @@ input[type="checkbox"] {
     button {
         width: 100%;
         margin-bottom: 10px;
+    }
+}
+
+@media (max-width: 768px) {
+    /* Adjustments for tablet and small screens */
+    .language-checkboxes {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     }
 }
