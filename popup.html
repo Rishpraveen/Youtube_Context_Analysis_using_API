@@ -11,16 +11,60 @@
   <h1>YouTube Context Analyzer</h1>
   <div id="processing-indicator" style="display: none; color: orange;">Processing...</div>
 
-  <button id="getTranscriptBtn">Get Transcript</button>
-  <div id="transcriptResult" class="result-area">
-    Transcript will appear here...
-  </div>
-
-  <hr>
-
-  <button id="analyzeCommentsBtn">Analyze Comments</button>
-  <div id="commentResult" class="result-area">
-    Comment analysis will appear here...
+  <div class="tab-container">
+    <div class="tab-buttons">
+      <button id="tab-transcript" class="tab-button active">Transcript</button>
+      <button id="tab-comments" class="tab-button">Comments</button>
+      <button id="tab-rag" class="tab-button">RAG Analysis</button>
+    </div>
+    
+    <div id="tab-content-transcript" class="tab-content active">
+      <div class="button-row">
+        <button id="getTranscriptBtn">Get Transcript</button>
+        <button id="exportTranscriptBtn" class="export-btn" title="Export Transcript">
+          <span class="export-icon">⬇</span>
+        </button>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar"></div>
+      </div>
+      <div id="transcriptResult" class="result-area">
+        Transcript will appear here...
+      </div>
+    </div>
+    
+    <div id="tab-content-comments" class="tab-content">
+      <div class="button-row">
+        <button id="analyzeCommentsBtn">Analyze Comments</button>
+        <button id="exportCommentsBtn" class="export-btn" title="Export Analysis">
+          <span class="export-icon">⬇</span>
+        </button>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar"></div>
+      </div>
+      <div id="commentResult" class="result-area">
+        Comment analysis will appear here...
+      </div>
+    </div>
+    
+    <div id="tab-content-rag" class="tab-content">
+      <div class="input-container">
+        <input type="text" id="ragQuery" placeholder="Ask a question about this video...">
+        <button id="analyzeWithRagBtn">Analyze</button>
+      </div>
+      <div class="button-row right-aligned">
+        <button id="exportRagBtn" class="export-btn" title="Export Analysis">
+          <span class="export-icon">⬇</span>
+        </button>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar"></div>
+      </div>
+      <div id="ragResult" class="result-area">
+        RAG analysis will appear here...
+      </div>
+    </div>
   </div>
 
   <hr>
@@ -33,6 +77,20 @@
   </div>
 
   <div id="status" class="status-area"></div>
+
+  <div id="keyboard-shortcuts" class="info-area">
+    <details>
+      <summary>Keyboard Shortcuts</summary>
+      <div class="shortcuts-grid">
+        <span>Ctrl+1:</span> <span>Transcript tab</span>
+        <span>Ctrl+2:</span> <span>Comments tab</span>
+        <span>Ctrl+3:</span> <span>RAG tab</span>
+        <span>T:</span> <span>Get transcript</span>
+        <span>C:</span> <span>Analyze comments</span>
+        <span>R:</span> <span>Focus RAG input</span>
+      </div>
+    </details>
+  </div>
 
   <script src="popup.js"></script>
 </body>

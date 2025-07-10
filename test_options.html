@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Options Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Options Page Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div id="test-results"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>YouTube API Test</h2>
+        <input type="text" id="testApiKey" placeholder="Enter YouTube API Key">
+        <button onclick="testYouTubeAPI()">Test API Key</button>
+        <div id="api-test-result"></div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const div = document.getElementById('test-results');
+            const p = document.createElement('p');
+            p.className = type;
+            p.textContent = new Date().toLocaleTimeString() + ': ' + message;
+            div.appendChild(p);
+        }
+
+        // Test YouTube API function
+        async function testYouTubeAPI() {
+            const apiKey = document.getElementById('testApiKey').value.trim();
+            const resultDiv = document.getElementById('api-test-result');
+            
+            if (!apiKey) {
+                resultDiv.innerHTML = '<p class="error">Please enter an API key</p>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<p class="info">Testing...</p>';
+            
+            try {
+                const testVideoId = 'dQw4w9WgXcQ';
+                const response = await fetch(
+                    `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${testVideoId}&key=${apiKey}`
+                );
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.items && data.items.length > 0) {
+                        resultDiv.innerHTML = '<p class="success">✓ API Key is valid!</p>';
+                    } else {
+                        resultDiv.innerHTML = '<p class="success">✓ API Key is valid (but test video not found)</p>';
+                    }
+                } else if (data.error) {
+                    resultDiv.innerHTML = `<p class="error">Error: ${data.error.message}</p>`;
+                } else {
+                    resultDiv.innerHTML = '<p class="error">Unknown error testing API</p>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">Network error: ${error.message}</p>`;
+            }
+        }
+
+        // Test basic functionality
+        function runTests() {
+            log('Starting tests...');
+            
+            // Test if browser supports required APIs
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                log('✓ Chrome extension APIs available', 'success');
+            } else {
+                log('✗ Chrome extension APIs not available (expected in test environment)', 'info');
+            }
+            
+            // Test fetch API
+            if (typeof fetch !== 'undefined') {
+                log('✓ Fetch API available', 'success');
+            } else {
+                log('✗ Fetch API not available', 'error');
+            }
+            
+            // Test JSON parsing
+            try {
+                JSON.parse('{"test": true}');
+                log('✓ JSON parsing working', 'success');
+            } catch (e) {
+                log('✗ JSON parsing failed', 'error');
+            }
+            
+            log('Tests completed');
+        }
+
+        // Run tests when page loads
+        window.addEventListener('load', runTests);
+    </script>
+</body>
+</html>

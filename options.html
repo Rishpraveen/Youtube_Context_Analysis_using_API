@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YouTube Context Analyzer Options</title>
+    <link rel="stylesheet" type="text/css" href="options.css">
+</head>
+<body>
+    <div class="container">
+        <h1>API Configuration</h1>
+        <div class="api-section">
+            <h2>YouTube API</h2>
+            <div class="input-group">
+                <label for="youtubeApiKey">YouTube API Key:</label>
+                <div class="flex-row">
+                    <input type="password" id="youtubeApiKey" placeholder="Enter YouTube API Key">
+                    <button id="showYoutubeKeyBtn" class="icon-button" title="Show/Hide Key">👁️</button>
+                </div>
+            </div>
+            <div class="api-help">
+                <details>
+                    <summary>How to get a YouTube API Key</summary>
+                    <ol>
+                        <li>Go to the <a href="https://console.developers.google.com/" target="_blank">Google Cloud Console</a></li>
+                        <li>Create a new project or select an existing one</li>
+                        <li>Enable the YouTube Data API v3</li>
+                        <li>Create credentials (API key)</li>
+                        <li>Copy and paste the API key here</li>
+                    </ol>
+                </details>
+            </div>
+            <div class="test-api-section">
+                <button id="testYoutubeApiBtn">Test YouTube API</button>
+                <div id="youtubeApiStatus" class="api-status"></div>
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h2>LLM API Selection</h2>
+            <div class="input-group">
+                <label for="apiProviderSelect">API Provider:</label>
+                <select id="apiProviderSelect">
+                    <option value="openai">OpenAI (Paid)</option>
+                    <option value="huggingface">Hugging Face (Free)</option>
+                    <option value="gemini">Google Gemini (Free Tier Available)</option>
+                    <option value="ollama">Ollama (Local, Free)</option>
+                </select>
+            </div>
+
+            <!-- OpenAI Settings -->
+            <div id="openai-settings" class="provider-settings">
+                <h3>OpenAI Settings</h3>
+                <div class="input-group">
+                    <label for="openaiApiKey">OpenAI API Key:</label>
+                    <div class="flex-row">
+                        <input type="password" id="openaiApiKey" placeholder="Enter OpenAI API Key">
+                        <button id="showOpenAIKeyBtn" class="icon-button" title="Show/Hide Key">👁️</button>
+                    </div>
+                </div>
+                <div class="api-help">
+                    <details>
+                        <summary>How to get an OpenAI API Key</summary>
+                        <ol>
+                            <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI API Keys</a></li>
+                            <li>Create an account or log in</li>
+                            <li>Create a new secret key</li>
+                            <li>Copy and paste the key here</li>
+                        </ol>
+                    </details>
+                </div>
+                <div class="input-group">
+                    <label for="openaiModelSelect">Model:</label>
+                    <select id="openaiModelSelect">
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Fast, Cheaper)</option>
+                        <option value="gpt-4">GPT-4 (More Accurate, Expensive)</option>
+                        <option value="gpt-4-turbo">GPT-4 Turbo (Balanced)</option>
+                    </select>
+                </div>
+                <div class="test-api-section">
+                    <button id="testOpenAIApiBtn">Test OpenAI API</button>
+                    <div id="openaiApiStatus" class="api-status"></div>
+                </div>
+            </div>
+            
+            <!-- Hugging Face Settings -->
+            <div id="huggingface-settings" class="provider-settings hidden">
+                <h3>Hugging Face Settings</h3>
+                <div class="input-group">
+                    <label for="huggingfaceApiKey">Hugging Face API Token (Optional):</label>
+                    <div class="flex-row">
+                        <input type="password" id="huggingfaceApiKey" placeholder="Enter Hugging Face API Token (optional for some models)">
+                        <button id="showHuggingfaceKeyBtn" class="icon-button" title="Show/Hide Key">👁️</button>
+                    </div>
+                </div>
+                <div class="api-help">
+                    <details>
+                        <summary>How to get a Hugging Face API Token</summary>
+                        <ol>
+                            <li>Go to <a href="https://huggingface.co/settings/tokens" target="_blank">Hugging Face Tokens</a></li>
+                            <li>Create an account or log in</li>
+                            <li>Create a new token</li>
+                            <li>Copy and paste the token here</li>
+                            <li>Note: Many models can be used without a token</li>
+                        </ol>
+                    </details>
+                </div>
+                <div class="input-group">
+                    <label for="huggingfaceModelSelect">Model:</label>
+                    <select id="huggingfaceModelSelect">
+                        <option value="microsoft/phi-2">Phi-2 (Free, Fast)</option>
+                        <option value="google/flan-t5-large">Flan-T5 Large (Free, Balanced)</option>
+                        <option value="facebook/opt-1.3b">OPT-1.3B (Free, General)</option>
+                        <option value="tiiuae/falcon-7b-instruct">Falcon-7B (Free, Strong)</option>
+                    </select>
+                </div>
+                <div class="test-api-section">
+                    <button id="testHuggingfaceApiBtn">Test Hugging Face API</button>
+                    <div id="huggingfaceApiStatus" class="api-status"></div>
+                </div>
+            </div>
+            
+            <!-- Google Gemini Settings -->
+            <div id="gemini-settings" class="provider-settings hidden">
+                <h3>Google Gemini Settings</h3>
+                <div class="input-group">
+                    <label for="geminiApiKey">Google API Key:</label>
+                    <div class="flex-row">
+                        <input type="password" id="geminiApiKey" placeholder="Enter Google API Key">
+                        <button id="showGeminiKeyBtn" class="icon-button" title="Show/Hide Key">👁️</button>
+                    </div>
+                </div>
+                <div class="api-help">
+                    <details>
+                        <summary>How to get a Google Gemini API Key</summary>
+                        <ol>
+                            <li>Go to <a href="https://ai.google.dev/tutorials/setup" target="_blank">Google AI Studio</a></li>
+                            <li>Create an account or log in</li>
+                            <li>Create an API key</li>
+                            <li>Copy and paste the key here</li>
+                            <li>Note: Gemini offers a free tier with usage limits</li>
+                            <li><strong>Important:</strong> Use Gemini 1.5 Flash for best compatibility</li>
+                        </ol>
+                    </details>
+                </div>
+                <div class="input-group">
+                    <label for="geminiModelSelect">Model:</label>
+                    <select id="geminiModelSelect">
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recommended)</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        <option value="gemini-pro">Gemini Pro (Legacy)</option>
+                    </select>
+                </div>
+                <div class="test-api-section">
+                    <button id="testGeminiApiBtn">Test Gemini API</button>
+                    <div id="geminiApiStatus" class="api-status"></div>
+                </div>
+            </div>
+            
+            <!-- Ollama Settings (Local) -->
+            <div id="ollama-settings" class="provider-settings hidden">
+                <h3>Ollama Settings (Local)</h3>
+                <div class="input-group">
+                    <label for="ollamaEndpoint">Ollama Endpoint:</label>
+                    <input type="text" id="ollamaEndpoint" value="http://localhost:11434" placeholder="http://localhost:11434">
+                </div>
+                <div class="api-help">
+                    <details>
+                        <summary>How to set up Ollama locally</summary>
+                        <ol>
+                            <li>Install <a href="https://ollama.ai" target="_blank">Ollama</a> on your computer</li>
+                            <li>Run Ollama and download a model with: <code>ollama pull llama2</code></li>
+                            <li>Ollama will run locally on port 11434</li>
+                            <li>No API key needed - completely free and private!</li>
+                        </ol>
+                    </details>
+                </div>
+                <div class="input-group">
+                    <label for="ollamaModelSelect">Model:</label>
+                    <select id="ollamaModelSelect">
+                        <option value="llama2">Llama 2</option>
+                        <option value="mistral">Mistral</option>
+                        <option value="llama2-uncensored">Llama 2 Uncensored</option>
+                        <option value="neural-chat">Neural Chat</option>
+                    </select>
+                </div>
+                <div class="test-api-section">
+                    <button id="testOllamaApiBtn">Test Ollama Connection</button>
+                    <div id="ollamaApiStatus" class="api-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="manual-mode-section">
+            <h2>Manual Mode Options</h2>
+            <div class="input-group">
+                <label for="manualModeToggle">Use Manual Mode:</label>
+                <input type="checkbox" id="manualModeToggle">
+                <span class="help-text">Enable this if you want to manually paste transcript text</span>
+            </div>
+            <div id="manualModeSettings" class="hidden">
+                <div class="input-group">
+                    <label for="defaultTranscript">Default Transcript Text (Optional):</label>
+                    <textarea id="defaultTranscript" placeholder="Paste a default transcript here if you want it pre-loaded"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h2>Performance Settings</h2>
+            <div class="input-group">
+                <label for="batchSize">Comment Batch Size:</label>
+                <input type="number" id="batchSize" min="10" max="100" value="25">
+                <span class="help-text">Lower for less memory usage, higher for better speed</span>
+            </div>
+            <div class="input-group">
+                <label for="maxComments">Max Comments to Analyze:</label>
+                <input type="number" id="maxComments" min="50" max="1000" value="100">
+                <span class="help-text">Maximum number of comments to fetch and analyze</span>
+            </div>
+            <div class="input-group">
+                <label for="chunkSizeInput">Transcript Chunk Size:</label>
+                <input type="number" id="chunkSizeInput" min="500" max="8000" value="1000">
+                <span class="help-text">Size of transcript chunks for RAG analysis (smaller uses less memory)</span>
+            </div>
+        </div>
+        
+        <div class="button-group">
+            <button id="saveButton">Save Settings</button>
+            <button id="resetButton">Reset to Defaults</button>
+            <div id="status"></div>
+        </div>
+    </div>
+    <script src="options.js"></script>
+</body>
+</html>
