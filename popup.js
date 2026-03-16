@@ -39,18 +39,19 @@ function setProcessing(processing) {
     transcriptBtn.disabled = processing;
     commentsBtn.disabled = processing;
     ragBtn.disabled = processing;
-    
-    // Reset progress bars when starting or ending
+
+    // Reset progress bars when ending
     if (!processing) {
         document.querySelectorAll('.progress-bar').forEach(bar => {
             bar.style.width = '0%';
+            bar.classList.remove('active');
         });
     }
 }
 
 function updateStatus(message, isError = false) {
     statusDiv.textContent = message;
-    statusDiv.style.color = isError ? 'red' : '#333'; // Use a default dark color for non-errors
+    statusDiv.style.color = isError ? 'var(--error)' : 'var(--text-secondary)';
     console.log("Status:", message);
     if (isError) {
         setProcessing(false); // Stop processing on error
@@ -63,27 +64,55 @@ function displayFormattedTranscript(transcriptText) {
 }
 
 function displayFormattedCommentAnalysis(analysisData) {
-    let html = `<strong>Total Comments Analyzed:</strong> ${analysisData.totalAnalyzed}<br>`;
-    if (analysisData.totalFetched !== analysisData.totalAnalyzed) {
-        html += `(Fetched ${analysisData.totalFetched}, analyzed subset)<br>`;
-    }
-    html += `<strong>Sentiment:</strong><br>`;
-    html += `  Positive: ${analysisData.sentiment.positive}<br>`;
-    html += `  Negative: ${analysisData.sentiment.negative}<br>`;
-    html += `  Neutral: ${analysisData.sentiment.neutral}<br>`;
+    const total = (analysisData.sentiment.positive || 0) + (analysisData.sentiment.negative || 0) + (analysisData.sentiment.neutral || 0);
+    const pctPos = total > 0 ? Math.round((analysisData.sentiment.positive / total) * 100) : 0;
+    const pctNeg = total > 0 ? Math.round((analysisData.sentiment.negative / total) * 100) : 0;
+    const pctNeu = total > 0 ? 100 - pctPos - pctNeg : 0;
 
-    if (analysisData.sampleAnalyzedComments && analysisData.sampleAnalyzedComments.length > 0) {
-        html += `<br><strong>Sample Comments:</strong><br>`;
-        analysisData.sampleAnalyzedComments.slice(0, 5).forEach(c => { // Show first 5
-            let sentimentEmoji = '😐';
-            if (c.sentiment === 'positive') sentimentEmoji = '😊';
-            else if (c.sentiment === 'negative') sentimentEmoji = '😞';
-            html += `<div style="font-size: 0.9em; margin-bottom: 3px; border-bottom: 1px solid #eee; padding-bottom: 2px;">${sentimentEmoji} (${c.sentiment}): ${c.text.substring(0, 100)}${c.text.length > 100 ? '...' : ''}</div>`;
-        });
+    let html = `<strong>${analysisData.totalAnalyzed} comments analyzed</strong>`;
+    if (analysisData.fetchMethod) {
+        const badgeClass = analysisData.fetchMethod === 'dom' ? 'dom' : 'api';
+        const badgeText = analysisData.fetchMethod === 'dom' ? 'Scraped from page' : 'Via API';
+        html += ` <span class="fetch-method-badge ${badgeClass}">${badgeText}</span>`;
     }
+    html += `<br>`;
+
+    // Sentiment bar visualization
+    html += `<div class="sentiment-bar-container">`;
+    html += `<div class="sentiment-bar-positive" style="width: ${pctPos}%"></div>`;
+    html += `<div class="sentiment-bar-negative" style="width: ${pctNeg}%"></div>`;
+    html += `<div class="sentiment-bar-neutral" style="width: ${pctNeu}%"></div>`;
+    html += `</div>`;
+
+    html += `<div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">`;
+    html += `<span style="color: var(--success)">Positive: ${pctPos}% (${analysisData.sentiment.positive})</span>`;
+    html += `<span style="color: var(--error)">Negative: ${pctNeg}% (${analysisData.sentiment.negative})</span>`;
+    html += `<span style="color: var(--text-muted)">Neutral: ${pctNeu}% (${analysisData.sentiment.neutral})</span>`;
+    html += `</div>`;
+
+    // Themes
+    if (analysisData.themes && analysisData.themes.length > 0) {
+        html += `<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);">`;
+        html += `<strong style="font-size: 11px;">Key Themes:</strong><br>`;
+        analysisData.themes.slice(0, 8).forEach(theme => {
+            html += `<span style="display: inline-block; padding: 2px 8px; margin: 2px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; font-size: 10px; color: var(--text-secondary);">${theme}</span>`;
+        });
+        html += `</div>`;
+    }
+
+    // Sample comments
+    if (analysisData.sampleComments && analysisData.sampleComments.length > 0) {
+        html += `<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);">`;
+        html += `<strong style="font-size: 11px;">Sample Comments:</strong><br>`;
+        analysisData.sampleComments.slice(0, 3).forEach(c => {
+            const text = c.text || '';
+            html += `<div style="font-size: 11px; margin-top: 4px; padding: 4px 0; border-bottom: 1px solid var(--border); color: var(--text-secondary);">${text.substring(0, 120)}${text.length > 120 ? '...' : ''}</div>`;
+        });
+        html += `</div>`;
+    }
+
     commentResultDiv.innerHTML = html;
 }
-
 function displayFormattedFactCheck(factCheckData) {
     let html = `<strong>Verdict:</strong> ${factCheckData.verdict || 'Unknown'}<br>`;
     if (factCheckData.confidence !== undefined && factCheckData.confidence !== null) {
@@ -361,74 +390,7 @@ function displayManualTranscriptModal(videoId, errorMessage = null) {
     document.body.appendChild(modalOverlay);
 }
 
-// Add more CSS for the manual transcript modal
-const style = document.createElement('style');
-style.textContent = `
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
-.modal-content {
-    background-color: white;
-    padding: 20px;
-    border-radius: 5px;
-    width: 90%;
-    max-width: 500px;
-    max-height: 90%;
-    overflow-y: auto;
-    position: relative;
-}
-
-.modal-close {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: none;
-    border: none;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 0 5px;
-}
-
-.manual-transcript {
-    width: 100%;
-    margin: 10px 0;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    resize: vertical;
-}
-
-.modal-help {
-    font-size: 12px;
-    color: #666;
-    margin-bottom: 15px;
-}
-
-.modal-submit {
-    width: 100%;
-    margin-top: 10px;
-}
-
-.checkbox-container {
-    margin: 10px 0;
-}
-
-.error {
-    color: #c62828;
-    font-weight: bold;
-}
-`;
-document.head.appendChild(style);
+// Modal styles are now in popup.css - no inline injection needed
 
 // --- Button Listeners ---
 
@@ -658,6 +620,11 @@ function updateProgress(tabName, percent) {
     const progressBar = document.querySelector(`#tab-content-${tabName} .progress-bar`);
     if (progressBar) {
         progressBar.style.width = `${percent}%`;
+        if (percent > 0 && percent < 100) {
+            progressBar.classList.add('active');
+        } else {
+            progressBar.classList.remove('active');
+        }
     }
 }
 
@@ -716,7 +683,7 @@ document.addEventListener('click', function() {
 });
 
 // Initial status
-updateStatus("Ready. Ensure API keys are set in options.");
+updateStatus("Ready. Configure API keys in options.");
 setProcessing(false);
 
 // Initial tab setup - ensure the first tab is active

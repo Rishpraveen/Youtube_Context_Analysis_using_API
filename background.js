@@ -31,13 +31,118 @@ let FETCH_ALL_LANGUAGES = false; // Whether to fetch all available languages
 let AUTO_TRANSLATE_CAPTIONS = false; // Whether to use auto-generated translations
 let BROWSER_EXTRACTION_ENABLED = true; // Whether to enable browser player caption extraction as fallback
 
-// Cache objects
-const transcriptCache = {};
-const commentAnalysisCache = {};
-const ragAnalysisCache = {};
+// LRU Cache implementation with TTL and size limits
+class LRUCache {
+    constructor(maxSize = 20, ttlMs = 60 * 60 * 1000, storageKey = null) {
+        this.maxSize = maxSize;
+        this.ttlMs = ttlMs;
+        this.storageKey = storageKey;
+        this.cache = new Map();
+        if (this.storageKey) {
+            this._restoreFromSession();
+        }
+    }
 
-// Cache timeout in milliseconds (1 hour)
-const CACHE_TIMEOUT = 60 * 60 * 1000;
+    async _restoreFromSession() {
+        try {
+            const result = await chrome.storage.session.get(this.storageKey);
+            if (result[this.storageKey]) {
+                const entries = JSON.parse(result[this.storageKey]);
+                for (const [key, entry] of entries) {
+                    if (Date.now() - entry.timestamp < this.ttlMs) {
+                        this.cache.set(key, entry);
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to restore cache from session storage:', e);
+        }
+    }
+
+    _persistToSession() {
+        if (!this.storageKey) return;
+        try {
+            const entries = Array.from(this.cache.entries());
+            chrome.storage.session.set({
+                [this.storageKey]: JSON.stringify(entries)
+            }).catch(() => {});
+        } catch (e) {
+            // Silently fail - session storage is a best-effort optimization
+        }
+    }
+
+    get(key) {
+        if (!this.cache.has(key)) return null;
+        const entry = this.cache.get(key);
+        if (Date.now() - entry.timestamp > this.ttlMs) {
+            this.cache.delete(key);
+            this._persistToSession();
+            return null;
+        }
+        // Move to end (most recently used)
+        this.cache.delete(key);
+        this.cache.set(key, entry);
+        return entry.data;
+    }
+
+    set(key, data) {
+        if (this.cache.has(key)) {
+            this.cache.delete(key);
+        }
+        // Evict oldest entries if at capacity
+        while (this.cache.size >= this.maxSize) {
+            const oldestKey = this.cache.keys().next().value;
+            this.cache.delete(oldestKey);
+        }
+        this.cache.set(key, { data, timestamp: Date.now() });
+        this._persistToSession();
+    }
+
+    clear() {
+        this.cache.clear();
+        this._persistToSession();
+    }
+
+    get size() {
+        return this.cache.size;
+    }
+
+    // Remove all expired entries
+    evictExpired() {
+        const now = Date.now();
+        for (const [key, entry] of this.cache) {
+            if (now - entry.timestamp > this.ttlMs) {
+                this.cache.delete(key);
+            }
+        }
+        this._persistToSession();
+    }
+}
+
+// Cache instances with reasonable limits
+const transcriptCache = new LRUCache(10, 60 * 60 * 1000, 'cache_transcripts');
+const commentAnalysisCache = new LRUCache(10, 60 * 60 * 1000, 'cache_comments');
+const ragAnalysisCache = new LRUCache(20, 30 * 60 * 1000, 'cache_rag');
+
+// Cache accessor functions
+function getCachedTranscript(videoId) {
+    return transcriptCache.get(videoId);
+}
+function cacheTranscript(videoId, transcript) {
+    transcriptCache.set(videoId, transcript);
+}
+function getCachedCommentAnalysis(videoId, provider) {
+    return commentAnalysisCache.get(`${videoId}_${provider}`);
+}
+function cacheCommentAnalysis(videoId, provider, result) {
+    commentAnalysisCache.set(`${videoId}_${provider}`, result);
+}
+function getCachedRagAnalysis(videoId, query, provider) {
+    return ragAnalysisCache.get(`${videoId}_${query}_${provider}`);
+}
+function cacheRagAnalysis(videoId, query, provider, result) {
+    ragAnalysisCache.set(`${videoId}_${query}_${provider}`, result);
+}
 
 // --- Utility Functions ---
 
@@ -118,6 +223,16 @@ async function loadSettings() {
     }
 }
 
+// Send data to popup (transcript, analysis results, etc.)
+function sendDataToPopup(action, data) {
+    chrome.runtime.sendMessage({
+        action: action,
+        data: data
+    }).catch(err => {
+        console.error("Error sending data to popup:", err);
+    });
+}
+
 // Send status updates to popup
 function updatePopupStatus(message, isError = false, isProcessing = undefined, progress = null, progressType = null) {
     const statusMessage = {
@@ -180,7 +295,7 @@ async function processBatch(items, batchSize, processFunc, progressType = null) 
         // Free up memory
         if (i > 0 && i % (batchSize * 4) === 0) {
             await new Promise(resolve => setTimeout(resolve, 1000));
-            gc && gc(); // Hint garbage collection if available
+            // Yield to event loop to allow GC (gc() is not available in service workers)
         }
     }
     
@@ -633,6 +748,169 @@ async function performFactCheck(text) {
 
 // --- Core Logic Functions ---
 
+// RAG Analysis: chunk transcript and query LLM with context
+async function performRagAnalysis(videoId, query) {
+    await loadSettings();
+
+    // Validate LLM API key
+    switch (API_PROVIDER) {
+        case 'openai':
+            if (!OPENAI_API_KEY) throw new Error("OpenAI API key not configured. Please set it in options.");
+            break;
+        case 'huggingface':
+            if (!HUGGINGFACE_API_KEY) throw new Error("Hugging Face API key not configured. Please set it in options.");
+            break;
+        case 'gemini':
+            if (!GEMINI_API_KEY) throw new Error("Gemini API key not configured. Please set it in options.");
+            break;
+        case 'ollama':
+            if (!OLLAMA_ENDPOINT) throw new Error("Ollama endpoint not configured. Please set it in options.");
+            break;
+        default:
+            throw new Error("Unknown API provider. Please check your settings.");
+    }
+
+    updatePopupStatus("Fetching transcript for RAG analysis...", false, true);
+
+    // Get transcript (use cache if available)
+    let transcriptText = '';
+    const cachedTranscript = getCachedTranscript(videoId);
+    if (cachedTranscript) {
+        if (typeof cachedTranscript === 'object' && cachedTranscript.combinedTranscript) {
+            transcriptText = cachedTranscript.combinedTranscript;
+        } else if (typeof cachedTranscript === 'string') {
+            transcriptText = cachedTranscript;
+        }
+    }
+
+    if (!transcriptText) {
+        const transcript = await fetchTranscriptFromPage(videoId);
+        cacheTranscript(videoId, transcript);
+        if (typeof transcript === 'object' && transcript.combinedTranscript) {
+            transcriptText = transcript.combinedTranscript;
+        } else if (typeof transcript === 'string') {
+            transcriptText = transcript;
+        }
+    }
+
+    if (!transcriptText) {
+        throw new Error("No transcript available for RAG analysis. Please fetch the transcript first.");
+    }
+
+    updatePopupStatus("Analyzing transcript with your query...", false, true, 50, 'rag');
+
+    // Chunk the transcript
+    const chunks = [];
+    for (let i = 0; i < transcriptText.length; i += CHUNK_SIZE) {
+        chunks.push(transcriptText.substring(i, i + CHUNK_SIZE));
+    }
+
+    // Use the most relevant chunks (limit to avoid exceeding API token limits)
+    const contextText = chunks.slice(0, 5).join('\n...\n');
+
+    const messages = [
+        {
+            role: 'system',
+            content: 'You are a helpful assistant that answers questions about YouTube videos based on their transcript. Provide accurate answers with references to specific parts of the transcript when possible. Return your response as valid JSON with fields "answer" (string) and "sources" (array of strings with relevant transcript excerpts).'
+        },
+        {
+            role: 'user',
+            content: `Based on the following video transcript, answer this question: "${query}"\n\nTranscript:\n${contextText}`
+        }
+    ];
+
+    const result = await callLLMAPI(messages);
+
+    // Parse the response
+    try {
+        const parsed = JSON.parse(result);
+        return {
+            answer: parsed.answer || result,
+            sources: parsed.sources || [],
+            query: query,
+            provider: API_PROVIDER
+        };
+    } catch (parseError) {
+        const jsonMatch = result.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const extracted = JSON.parse(jsonMatch[0]);
+            return {
+                answer: extracted.answer || result,
+                sources: extracted.sources || [],
+                query: query,
+                provider: API_PROVIDER
+            };
+        }
+        return {
+            answer: result,
+            sources: [],
+            query: query,
+            provider: API_PROVIDER
+        };
+    }
+}
+
+// Fetch comments via YouTube Data API v3
+async function fetchCommentsViaAPI(videoId) {
+    const comments = [];
+    let nextPageToken = null;
+    let totalFetched = 0;
+
+    console.log('Fetching comments from YouTube API...');
+    do {
+        const response = await fetch(
+            `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=100&key=${YOUTUBE_API_KEY}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`
+        );
+
+        if (!response.ok) {
+            console.error('YouTube API response not ok:', response.status, response.statusText);
+            throw new Error(`YouTube API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('YouTube API response received, items:', data.items?.length || 0);
+
+        const newComments = data.items.map(item => ({
+            text: item.snippet.topLevelComment.snippet.textDisplay,
+            likes: item.snippet.topLevelComment.snippet.likeCount,
+            author: item.snippet.topLevelComment.snippet.authorDisplayName
+        }));
+
+        comments.push(...newComments);
+        totalFetched += newComments.length;
+        nextPageToken = data.nextPageToken;
+
+        console.log(`Fetched ${newComments.length} comments, total: ${totalFetched}`);
+    } while (nextPageToken && totalFetched < MAX_COMMENTS);
+
+    return comments;
+}
+
+// Fetch comments by scraping the YouTube page DOM (no API key required)
+async function fetchCommentsViaDOM(videoId) {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+            if (!tabs[0]?.id) {
+                reject(new Error("Cannot access active tab for comment scraping"));
+                return;
+            }
+            try {
+                const response = await chrome.tabs.sendMessage(tabs[0].id, {
+                    action: "scrapeCommentsFromPage",
+                    maxComments: MAX_COMMENTS
+                });
+                if (response && response.success) {
+                    resolve(response.comments);
+                } else {
+                    reject(new Error(response?.error || "DOM comment scraping failed"));
+                }
+            } catch (error) {
+                reject(new Error(`Comment scraping failed: ${error.message}`));
+            }
+        });
+    });
+}
+
 async function fetchAndAnalyzeComments(videoId) {
     console.log('fetchAndAnalyzeComments called for video:', videoId);
     await loadSettings();
@@ -656,77 +934,81 @@ async function fetchAndAnalyzeComments(videoId) {
             throw new Error("Unknown API provider selected. Please check your settings.");
     }
     
-    // YouTube API key is still needed for comment fetching
-    if (!YOUTUBE_API_KEY) {
-        throw new Error("YouTube API key not configured. Comments cannot be fetched without it.");
-    }
-
     console.log('API keys validated successfully');
     updatePopupStatus(`Fetching comments for video: ${videoId}...`, false, true);
-    
+
     let comments = [];
-    let nextPageToken = null;
-    let totalFetched = 0;
+    let fetchMethod = 'api';
 
     try {
-        console.log('Fetching comments from YouTube API...');
-        do {
-            const response = await fetch(
-                `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=100&key=${YOUTUBE_API_KEY}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`
-            );
+        if (YOUTUBE_API_KEY) {
+            // Try YouTube Data API first
+            comments = await fetchCommentsViaAPI(videoId);
+        } else {
+            // No API key — use DOM scraping fallback
+            console.log('No YouTube API key, using DOM scraping fallback...');
+            updatePopupStatus("No YouTube API key. Scraping comments from page...", false, true);
+            comments = await fetchCommentsViaDOM(videoId);
+            fetchMethod = 'dom';
+        }
+    } catch (apiError) {
+        // API failed — try DOM fallback
+        console.warn('YouTube API comment fetch failed, trying DOM fallback:', apiError);
+        updatePopupStatus("API failed. Scraping comments from page...", false, true);
+        try {
+            comments = await fetchCommentsViaDOM(videoId);
+            fetchMethod = 'dom';
+        } catch (domError) {
+            console.error('DOM comment scraping also failed:', domError);
+            throw new Error(`Could not fetch comments. API error: ${apiError.message}. DOM scraping error: ${domError.message || domError}`);
+        }
+    }
 
-            if (!response.ok) {
-                console.error('YouTube API response not ok:', response.status, response.statusText);
-                throw new Error(`YouTube API error: ${response.status}`);
-            }
+    try {
+        if (comments.length === 0) {
+            throw new Error("No comments found. Comments may be disabled for this video.");
+        }
 
-            const data = await response.json();
-            console.log('YouTube API response received, items:', data.items?.length || 0);
-            
-            const newComments = data.items.map(item => ({
-                text: item.snippet.topLevelComment.snippet.textDisplay,
-                likes: item.snippet.topLevelComment.snippet.likeCount,
-                author: item.snippet.topLevelComment.snippet.authorDisplayName
-            }));
-
-            comments.push(...newComments);
-            totalFetched += newComments.length;
-            nextPageToken = data.nextPageToken;
-            
-            console.log(`Fetched ${newComments.length} comments, total: ${totalFetched}`);
-
-        } while (nextPageToken && totalFetched < MAX_COMMENTS);
-
-        console.log(`Comment fetching complete. Total comments: ${comments.length}`);
+        console.log(`Comment fetching complete (${fetchMethod}). Total comments: ${comments.length}`);
         updatePopupStatus(`Analyzing ${comments.length} comments...`, false, true, 25, 'comments');
 
-        // Process comments in batches
-        console.log('Starting batch processing of comments...');
-        const analysisResults = await processBatch(comments, BATCH_SIZE, analyzeCommentBatch, 'comments');
-        console.log('Batch processing complete, results:', analysisResults);
-
-        // Aggregate results
+        // Stream-process: analyze each batch immediately to reduce peak memory
         const analysis = {
-            totalFetched: totalFetched,
-            totalAnalyzed: comments.length,
-            sentiment: {
-                positive: 0,
-                negative: 0,
-                neutral: 0
-            },
+            totalFetched: comments.length,
+            totalAnalyzed: 0,
+            fetchMethod: fetchMethod,
+            sentiment: { positive: 0, negative: 0, neutral: 0 },
             themes: [],
             sampleComments: comments.slice(0, 5)
         };
 
-        // Combine batch results
-        analysisResults.forEach(result => {
-            analysis.sentiment.positive += result.positive || 0;
-            analysis.sentiment.negative += result.negative || 0;
-            analysis.sentiment.neutral += result.neutral || 0;
-            if (result.themes) {
-                analysis.themes.push(...result.themes);
+        const totalBatches = Math.ceil(comments.length / BATCH_SIZE);
+        for (let i = 0; i < comments.length; i += BATCH_SIZE) {
+            const batch = comments.slice(i, i + BATCH_SIZE);
+            const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+
+            console.log(`Analyzing batch ${batchNum}/${totalBatches} (${batch.length} comments)`);
+            const batchResult = await analyzeCommentBatch(batch);
+
+            analysis.sentiment.positive += batchResult.positive || 0;
+            analysis.sentiment.negative += batchResult.negative || 0;
+            analysis.sentiment.neutral += batchResult.neutral || 0;
+            if (batchResult.themes) {
+                analysis.themes.push(...batchResult.themes);
             }
-        });
+            analysis.totalAnalyzed += batch.length;
+
+            const progress = Math.round((batchNum / totalBatches) * 100);
+            updateProgressStatus('comments', progress);
+
+            // Yield to event loop between batches
+            if (batchNum % 4 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+
+        // Deduplicate themes
+        analysis.themes = [...new Set(analysis.themes)];
 
         return analysis;
 
@@ -1118,20 +1400,20 @@ function createCombinedTranscript(allCaptions) {
     if (languages.length === 1) {
         return convertSRTToTranscript(allCaptions[languages[0]].content);
     }
-    
-    let combined = "=== MULTI-LANGUAGE TRANSCRIPT ===\n\n";
-    
+
+    const parts = ["=== MULTI-LANGUAGE TRANSCRIPT ===\n\n"];
+
     for (const [langCode, langData] of Object.entries(allCaptions)) {
         const languageName = getLanguageName(langCode);
-        const typeInfo = langData.isAutoTranslated ? ' (Auto-translated)' : 
+        const typeInfo = langData.isAutoTranslated ? ' (Auto-translated)' :
                         langData.kind === 'asr' ? ' (Auto-generated)' : '';
-        
-        combined += `--- ${languageName} (${langCode.toUpperCase()})${typeInfo} ---\n`;
-        combined += convertSRTToTranscript(langData.content);
-        combined += "\n\n";
+
+        parts.push(`--- ${languageName} (${langCode.toUpperCase()})${typeInfo} ---\n`);
+        parts.push(convertSRTToTranscript(langData.content));
+        parts.push("\n\n");
     }
-    
-    return combined;
+
+    return parts.join('');
 }
 
 // Fetch transcript via page extraction (no API key required)
@@ -1627,3 +1909,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // Load settings on extension start
 loadSettings();
+
+// Periodic cache cleanup every 5 minutes
+setInterval(() => {
+    transcriptCache.evictExpired();
+    commentAnalysisCache.evictExpired();
+    ragAnalysisCache.evictExpired();
+}, 5 * 60 * 1000);

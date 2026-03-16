@@ -325,15 +325,16 @@ function extractCaptionsForLanguage(languageInfo) {
 function startCaptionExtraction(languageInfo, resolve, reject) {
     const captionTexts = [];
     const extractedTexts = new Set(); // Avoid duplicates
+    const MAX_CAPTION_ENTRIES = 5000; // Safety limit to prevent unbounded growth
     let extractionStartTime = Date.now();
     const maxExtractionTime = 30000; // 30 seconds max
     let lastCaptionTime = Date.now();
-    
+
     const captionExtractor = setInterval(() => {
         const currentTime = Date.now();
-        
-        // Stop if we've been extracting too long without new content
-        if (currentTime - lastCaptionTime > 5000 || currentTime - extractionStartTime > maxExtractionTime) {
+
+        // Stop if we've been extracting too long without new content, or hit safety limit
+        if (currentTime - lastCaptionTime > 5000 || currentTime - extractionStartTime > maxExtractionTime || captionTexts.length >= MAX_CAPTION_ENTRIES) {
             clearInterval(captionExtractor);
             
             if (captionTexts.length > 0) {
@@ -376,7 +377,7 @@ function startCaptionExtraction(languageInfo, resolve, reject) {
             }
         });
         
-    }, 100); // Check every 100ms for new captions
+    }, 200); // Check every 200ms for new captions (reduced from 100ms to save CPU)
     
     // Auto-resolve if no captions appear after 10 seconds
     setTimeout(() => {
@@ -447,6 +448,83 @@ function extractMultiLanguageCaptionsFromPlayer(preferredLanguages = []) {
     });
 }
 
+// Scrape comments directly from the YouTube page DOM (no API key needed)
+function scrapeCommentsFromPage(maxComments = 100) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Scroll to comments section to trigger lazy loading
+            const commentsSection = document.querySelector('ytd-comments#comments') ||
+                                   document.querySelector('#comments');
+            if (commentsSection) {
+                commentsSection.scrollIntoView({ behavior: 'instant' });
+            } else {
+                // Try scrolling down to trigger comment loading
+                window.scrollBy(0, 800);
+            }
+
+            await new Promise(r => setTimeout(r, 1500));
+
+            let previousCount = 0;
+            let stableCount = 0;
+
+            // Scroll progressively to load more comments
+            for (let i = 0; i < 30; i++) {
+                const commentElements = document.querySelectorAll('ytd-comment-thread-renderer');
+                if (commentElements.length >= maxComments) break;
+
+                if (commentElements.length === previousCount) {
+                    stableCount++;
+                    if (stableCount >= 4) break; // No new comments loading
+                } else {
+                    stableCount = 0;
+                }
+                previousCount = commentElements.length;
+
+                window.scrollBy(0, 600);
+                await new Promise(r => setTimeout(r, 800));
+            }
+
+            // Extract comment data
+            const commentElements = document.querySelectorAll('ytd-comment-thread-renderer');
+            const comments = [];
+            const seen = new Set();
+
+            commentElements.forEach((element, index) => {
+                if (index >= maxComments) return;
+
+                const textEl = element.querySelector('#content-text');
+                const authorEl = element.querySelector('#author-text span') ||
+                                element.querySelector('#author-text');
+                const likesEl = element.querySelector('#vote-count-middle');
+
+                if (textEl) {
+                    const text = textEl.textContent.trim();
+                    if (text && !seen.has(text)) {
+                        seen.add(text);
+                        comments.push({
+                            text: text,
+                            author: authorEl ? authorEl.textContent.trim() : 'Unknown',
+                            likes: likesEl ? parseInt(likesEl.textContent.trim().replace(/[^0-9]/g, '')) || 0 : 0
+                        });
+                    }
+                }
+            });
+
+            // Scroll back to top
+            window.scrollTo(0, 0);
+
+            if (comments.length === 0) {
+                reject("No comments found on page. Comments may be disabled or the page hasn't loaded fully.");
+                return;
+            }
+
+            resolve(comments);
+        } catch (error) {
+            reject(`Error scraping comments: ${error.message}`);
+        }
+    });
+}
+
 // Handle messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "getVideoInfo") {
@@ -484,6 +562,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
     
+    if (request.action === "scrapeCommentsFromPage") {
+        const maxComments = request.maxComments || 100;
+        scrapeCommentsFromPage(maxComments)
+            .then(comments => sendResponse({ success: true, comments }))
+            .catch(error => sendResponse({ success: false, error: error.toString() }));
+        return true;
+    }
+
     if (request.action === "displayFactCheck") {
         // Display fact check in a floating panel
         const panel = document.createElement('div');

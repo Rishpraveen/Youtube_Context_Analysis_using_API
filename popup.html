@@ -8,8 +8,11 @@
 </head>
 
 <body>
-  <h1>YouTube Context Analyzer</h1>
-  <div id="processing-indicator" style="display: none; color: orange;">Processing...</div>
+  <div class="header">
+    <img src="icon32.png" alt="" class="header-icon">
+    <h1>YouTube Context Analyzer</h1>
+    <div id="processing-indicator" class="processing-dot" style="display: none;"></div>
+  </div>
 
   <div class="tab-container">
     <div class="tab-buttons">
@@ -18,12 +21,12 @@
       <button id="tab-rag" class="tab-button">RAG Analysis</button>
       <button id="tab-factcheck" class="tab-button">Fact Check</button>
     </div>
-    
+
     <div id="tab-content-transcript" class="tab-content active">
       <div class="button-row">
         <button id="getTranscriptBtn">Get Transcript</button>
         <button id="exportTranscriptBtn" class="export-btn" title="Export Transcript">
-          <span class="export-icon">⬇</span>
+          <span class="export-icon">&#11015;</span>
         </button>
       </div>
       <div class="progress-container">
@@ -33,12 +36,12 @@
         Transcript will appear here...
       </div>
     </div>
-    
+
     <div id="tab-content-comments" class="tab-content">
       <div class="button-row">
         <button id="analyzeCommentsBtn">Analyze Comments</button>
         <button id="exportCommentsBtn" class="export-btn" title="Export Analysis">
-          <span class="export-icon">⬇</span>
+          <span class="export-icon">&#11015;</span>
         </button>
       </div>
       <div class="progress-container">
@@ -48,7 +51,7 @@
         Comment analysis will appear here...
       </div>
     </div>
-    
+
     <div id="tab-content-rag" class="tab-content">
       <div class="input-container">
         <input type="text" id="ragQuery" placeholder="Ask a question about this video...">
@@ -56,7 +59,7 @@
       </div>
       <div class="button-row right-aligned">
         <button id="exportRagBtn" class="export-btn" title="Export Analysis">
-          <span class="export-icon">⬇</span>
+          <span class="export-icon">&#11015;</span>
         </button>
       </div>
       <div class="progress-container">
@@ -80,11 +83,9 @@
     </div>
   </div>
 
-  <hr>
-
   <div id="status" class="status-area"></div>
 
-  <div id="keyboard-shortcuts" class="info-area">
+  <div id="keyboard-shortcuts">
     <details>
       <summary>Keyboard Shortcuts</summary>
       <div class="shortcuts-grid">

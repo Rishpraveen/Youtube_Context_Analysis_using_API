@@ -1,62 +1,96 @@
+/* === YouTube Context Analyzer Options - Dark Theme === */
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #1a1a1a;
+    --bg-card: #212121;
+    --bg-elevated: #272727;
+    --bg-hover: #303030;
+    --bg-input: #181818;
+    --text-primary: #f1f1f1;
+    --text-secondary: #aaaaaa;
+    --text-muted: #717171;
+    --accent: #3ea6ff;
+    --accent-hover: #65b8ff;
+    --border: #303030;
+    --border-light: #3a3a3a;
+    --success: #2ecc71;
+    --error: #e74c3c;
+    --warning: #f39c12;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --font: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-family: var(--font);
     margin: 0;
-    padding: 20px;
-    background-color: #f5f5f5;
-    color: #333;
+    padding: 24px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.5;
 }
 
 .container {
     max-width: 800px;
     margin: 0 auto;
-    background-color: white;
+    background: var(--bg-secondary);
     padding: 30px;
-    border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
 }
 
 h1 {
-    color: #333;
+    color: var(--text-primary);
     margin-bottom: 30px;
     text-align: center;
+    font-size: 22px;
+    font-weight: 600;
 }
 
 h2 {
-    color: #444;
-    margin-top: 20px;
-    margin-bottom: 15px;
+    color: var(--accent);
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 16px;
+    font-weight: 600;
 }
 
 .api-section, .settings-section, .manual-mode-section {
-    margin-bottom: 30px;
+    margin-bottom: 24px;
     padding: 20px;
-    border: 1px solid #e0e0e0;
-    border-radius: 5px;
-    background-color: #fcfcfc;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
 }
 
 .input-group {
-    margin-bottom: 15px;
+    margin-bottom: 16px;
 }
 
 label {
     display: block;
-    margin-bottom: 5px;
-    color: #666;
+    margin-bottom: 6px;
+    color: var(--text-secondary);
     font-weight: 500;
+    font-size: 13px;
 }
 
 input[type="password"],
 input[type="text"],
 input[type="number"],
-select, 
+select,
 textarea {
     width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     font-size: 14px;
-    transition: border-color 0.3s ease;
+    font-family: var(--font);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease;
 }
 
 textarea {
@@ -69,9 +103,18 @@ input[type="text"]:focus,
 input[type="number"]:focus,
 select:focus,
 textarea:focus {
-    border-color: #4a90e2;
+    border-color: var(--accent);
     outline: none;
-    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+    box-shadow: 0 0 0 2px rgba(62, 166, 255, 0.15);
+}
+
+input::placeholder, textarea::placeholder {
+    color: var(--text-muted);
+}
+
+select option {
+    background: var(--bg-card);
+    color: var(--text-primary);
 }
 
 .flex-row {
@@ -85,183 +128,194 @@ textarea:focus {
 }
 
 .icon-button {
-    background: none;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     padding: 8px 12px;
     cursor: pointer;
     font-size: 16px;
     transition: all 0.2s ease;
+    color: var(--text-secondary);
 }
 
 .icon-button:hover {
-    background-color: #f0f0f0;
+    background: var(--bg-hover);
+    border-color: var(--border-light);
 }
 
 .button-group {
     display: flex;
     justify-content: center;
     gap: 15px;
-    margin-top: 20px;
+    margin-top: 24px;
 }
 
 button {
-    background-color: #4a90e2;
-    color: white;
+    background: var(--accent);
+    color: #000;
     border: none;
     padding: 10px 20px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 16px;
-    transition: background-color 0.3s ease;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: var(--font);
+    transition: all 0.2s ease;
 }
 
 button:hover {
-    background-color: #357abd;
+    background: var(--accent-hover);
+    box-shadow: 0 2px 8px rgba(62, 166, 255, 0.25);
 }
 
 button:disabled {
-    background-color: #ccc;
+    background: var(--bg-hover);
+    color: var(--text-muted);
     cursor: not-allowed;
+    box-shadow: none;
 }
 
 #resetButton {
-    background-color: #e25353;
+    background: var(--error);
+    color: #fff;
 }
 
 #resetButton:hover {
-    background-color: #c73e3e;
+    background: #c0392b;
 }
 
 /* Status and error handling */
 .status {
-    margin-top: 15px;
-    padding: 10px;
-    border-radius: 4px;
+    margin-top: 16px;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
     font-weight: 500;
+    font-size: 13px;
     display: none;
 }
 
 .status.success {
-    color: #2e7d32;
-    background-color: #e8f5e9;
-    border: 1px solid #4caf50;
+    color: var(--success);
+    background: rgba(46, 204, 113, 0.1);
+    border: 1px solid rgba(46, 204, 113, 0.3);
     display: block;
 }
 
 .status.error {
-    color: #c62828;
-    background-color: #ffebee;
-    border: 1px solid #f44336;
+    color: var(--error);
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.3);
     display: block;
 }
 
 .status.info {
-    color: #1976d2;
-    background-color: #e3f2fd;
-    border: 1px solid #2196f3;
+    color: var(--accent);
+    background: rgba(62, 166, 255, 0.1);
+    border: 1px solid rgba(62, 166, 255, 0.3);
     display: block;
 }
 
-/* API Test Elements */
+/* API Test */
 .test-api-section {
-    margin-top: 15px;
-    padding-top: 15px;
-    border-top: 1px dashed #e0e0e0;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
 }
 
 .api-status {
     margin-top: 10px;
-    padding: 8px;
-    border-radius: 4px;
-    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
 }
 
 .api-status.success {
-    color: #2e7d32;
-    background-color: #e8f5e9;
+    color: var(--success);
+    background: rgba(46, 204, 113, 0.1);
 }
 
 .api-status.error {
-    color: #c62828;
-    background-color: #ffebee;
+    color: var(--error);
+    background: rgba(231, 76, 60, 0.1);
 }
 
 .api-status.testing {
-    color: #f57c00;
-    background-color: #fff3e0;
+    color: var(--warning);
+    background: rgba(243, 156, 18, 0.1);
 }
 
-/* Help elements */
+/* Help */
 .api-help {
     margin-top: 10px;
-    font-size: 14px;
-    color: #666;
+    font-size: 13px;
+    color: var(--text-muted);
 }
 
-.api-help details {
-    margin-bottom: 10px;
-}
+.api-help details { margin-bottom: 10px; }
 
 .api-help summary {
     cursor: pointer;
-    color: #4a90e2;
+    color: var(--accent);
     margin-bottom: 5px;
 }
+.api-help summary:hover { color: var(--accent-hover); }
 
 .api-help a {
-    color: #4a90e2;
+    color: var(--accent);
     text-decoration: none;
 }
+.api-help a:hover { text-decoration: underline; }
 
-.api-help a:hover {
-    text-decoration: underline;
+.api-help ol {
+    color: var(--text-secondary);
+    padding-left: 20px;
 }
+.api-help ol li { margin: 4px 0; }
 
 .help-text {
     display: block;
     font-size: 12px;
-    color: #666;
-    margin-top: 3px;
+    color: var(--text-muted);
+    margin-top: 4px;
 }
 
 /* Manual Mode */
-.hidden {
-    display: none;
-}
+.hidden { display: none; }
 
 input[type="checkbox"] {
-    margin-right: 5px;
+    margin-right: 6px;
+    accent-color: var(--accent);
 }
 
-/* Language selector styles */
-.language-selector {
-    margin-top: 10px;
-}
+/* Language selector */
+.language-selector { margin-top: 12px; }
 
 .language-checkboxes {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 8px;
+    gap: 6px;
     max-height: 300px;
     overflow-y: auto;
-    border: 1px solid #ddd;
-    padding: 15px;
-    border-radius: 6px;
-    background-color: #f9f9f9;
+    border: 1px solid var(--border);
+    padding: 14px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
 }
 
 .language-checkboxes label {
     display: flex;
     align-items: center;
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
     transition: background-color 0.2s ease;
     font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
 }
 
 .language-checkboxes label:hover {
-    background-color: #e8f4fd;
+    background: var(--bg-hover);
+    color: var(--text-primary);
 }
 
 .language-checkboxes input[type="checkbox"] {
@@ -269,73 +323,75 @@ input[type="checkbox"] {
     flex-shrink: 0;
 }
 
-/* Enhanced help text for language settings */
 .language-selector .help-text {
     margin-top: 10px;
-    padding: 10px;
-    background-color: #e8f4fd;
-    border-radius: 4px;
-    border-left: 4px solid #2196f3;
+    padding: 10px 12px;
+    background: rgba(62, 166, 255, 0.08);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent);
+    color: var(--text-secondary);
 }
 
-.language-selector .help-text::before {
-    content: "💡 ";
-    font-size: 14px;
-}
-
-/* Limited support indicator styles */
+/* Limited support indicator */
 .limited-support-indicator {
     font-size: 12px;
-    color: #ff9800;
+    color: var(--warning);
     margin-left: 4px;
     cursor: help;
 }
 
 .limited-support-indicator:hover::after {
-    content: "This language may not have auto-generated captions available on most videos. Consider using manual transcript mode.";
+    content: "This language may not have auto-generated captions on most videos.";
     position: absolute;
-    background: #333;
-    color: white;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
     padding: 8px 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 12px;
     white-space: normal;
     width: 250px;
     z-index: 1000;
     margin-top: 20px;
     margin-left: -125px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 #languagePreferenceGroup.disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     pointer-events: none;
 }
 
+/* Provider settings sections */
+.provider-settings {
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+/* Responsive */
 @media (max-width: 600px) {
-    .container {
-        padding: 15px;
-    }
-    
+    body { padding: 12px; }
+    .container { padding: 16px; }
+
     input[type="password"],
     input[type="text"],
     input[type="number"],
-    select {
-        font-size: 16px; /* Better for mobile */
-    }
-    
-    .button-group {
-        flex-direction: column;
-    }
-    
-    button {
-        width: 100%;
-        margin-bottom: 10px;
-    }
+    select { font-size: 16px; }
+
+    .button-group { flex-direction: column; }
+    button { width: 100%; margin-bottom: 10px; }
 }
 
 @media (max-width: 768px) {
-    /* Adjustments for tablet and small screens */
     .language-checkboxes {
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     }
