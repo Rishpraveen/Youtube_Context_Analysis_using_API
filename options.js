@@ -64,13 +64,13 @@ document.addEventListener('DOMContentLoaded', () => {
         apiProvider: 'openai',
         youtubeApiKey: '',
         openaiApiKey: '',
-        openaiModel: 'gpt-3.5-turbo',
+        openaiModel: 'gpt-4.1-mini',
         huggingfaceApiKey: '',
-        huggingfaceModel: 'microsoft/DialoGPT-medium',
+        huggingfaceModel: 'Qwen/Qwen2.5-7B-Instruct',
         geminiApiKey: '',
-        geminiModel: 'gemini-1.5-flash',
+        geminiModel: 'gemini-2.0-flash',
         ollamaEndpoint: 'http://localhost:11434',
-        ollamaModel: 'llama2',
+        ollamaModel: 'llama3.2:3b',
         batchSize: 25,
         maxComments: 100,
         chunkSize: 1000,
@@ -119,15 +119,24 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // OpenAI settings
             if (result.openaiApiKey) openaiApiInput.value = result.openaiApiKey;
-            if (result.openaiModel) openaiModelSelect.value = result.openaiModel;
+            if (result.openaiModel) {
+                openaiModelSelect.value = result.openaiModel;
+                if (!openaiModelSelect.value) openaiModelSelect.value = defaultSettings.openaiModel;
+            }
             
             // Hugging Face settings
             if (result.huggingfaceApiKey) huggingfaceApiInput.value = result.huggingfaceApiKey;
-            if (result.huggingfaceModel) huggingfaceModelSelect.value = result.huggingfaceModel;
+            if (result.huggingfaceModel) {
+                huggingfaceModelSelect.value = result.huggingfaceModel;
+                if (!huggingfaceModelSelect.value) huggingfaceModelSelect.value = defaultSettings.huggingfaceModel;
+            }
             
             // Gemini settings
             if (result.geminiApiKey) geminiApiInput.value = result.geminiApiKey;
-            if (result.geminiModel) geminiModelSelect.value = result.geminiModel;
+            if (result.geminiModel) {
+                geminiModelSelect.value = result.geminiModel;
+                if (!geminiModelSelect.value) geminiModelSelect.value = defaultSettings.geminiModel;
+            }
             
             // Ollama settings
             if (result.ollamaEndpoint) ollamaEndpointInput.value = result.ollamaEndpoint;
@@ -183,13 +192,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 apiProvider: provider,
                 youtubeApiKey: youtubeApiInput ? youtubeApiInput.value.trim() : '',
                 openaiApiKey: openaiApiInput ? openaiApiInput.value.trim() : '',
-                openaiModel: openaiModelSelect ? openaiModelSelect.value : defaultSettings.openaiModel,
+                openaiModel: openaiModelSelect && openaiModelSelect.value ? openaiModelSelect.value : defaultSettings.openaiModel,
                 huggingfaceApiKey: huggingfaceApiInput ? huggingfaceApiInput.value.trim() : '',
-                huggingfaceModel: huggingfaceModelSelect ? huggingfaceModelSelect.value : defaultSettings.huggingfaceModel,
+                huggingfaceModel: huggingfaceModelSelect && huggingfaceModelSelect.value ? huggingfaceModelSelect.value : defaultSettings.huggingfaceModel,
                 geminiApiKey: geminiApiInput ? geminiApiInput.value.trim() : '',
-                geminiModel: geminiModelSelect ? geminiModelSelect.value : defaultSettings.geminiModel,
-                ollamaEndpoint: ollamaEndpointInput ? ollamaEndpointInput.value.trim() : defaultSettings.ollamaEndpoint,
-                ollamaModel: ollamaModelSelect ? ollamaModelSelect.value : defaultSettings.ollamaModel,
+                geminiModel: geminiModelSelect && geminiModelSelect.value ? geminiModelSelect.value : defaultSettings.geminiModel,
+                ollamaEndpoint: ollamaEndpointInput && ollamaEndpointInput.value.trim() ? ollamaEndpointInput.value.trim() : defaultSettings.ollamaEndpoint,
+                ollamaModel: ollamaModelSelect && ollamaModelSelect.value.trim() ? ollamaModelSelect.value.trim() : defaultSettings.ollamaModel,
                 batchSize: batchSizeInput ? parseInt(batchSizeInput.value) : defaultSettings.batchSize,
                 maxComments: maxCommentsInput ? parseInt(maxCommentsInput.value) : defaultSettings.maxComments,
                 chunkSize: chunkSizeInput ? parseInt(chunkSizeInput.value) : defaultSettings.chunkSize,
@@ -320,12 +329,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Toggle password visibility
-    function togglePasswordVisibility(inputElement) {
+    function togglePasswordVisibility(inputElement, buttonElement) {
         if (inputElement.type === 'password') {
             inputElement.type = 'text';
+            if (buttonElement) buttonElement.textContent = 'Hide';
         } else {
             inputElement.type = 'password';
+            if (buttonElement) buttonElement.textContent = 'Show';
         }
+    }
+
+    function getGeminiCandidateModels(selectedModel) {
+        const fallbackModels = [
+            selectedModel,
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro'
+        ];
+        return [...new Set(fallbackModels.filter(Boolean))];
     }
 
     // Test YouTube API
@@ -502,42 +524,52 @@ document.addEventListener('DOMContentLoaded', () => {
         showAPIStatus(geminiApiStatus, 'Testing...', 'testing');
         
         try {
-            // Use the v1 API endpoint instead of v1beta for better compatibility
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: "Say 'API connection successful!' in a short response."
-                            }]
-                        }],
-                        generationConfig: {
-                            maxOutputTokens: 20,
-                            temperature: 0.1
-                        }
-                    })
+            const candidates = getGeminiCandidateModels(model);
+            let finalError = null;
+
+            for (const candidate of candidates) {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1/models/${candidate}:generateContent?key=${apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{
+                                    text: "Say 'API connection successful!' in a short response."
+                                }]
+                            }],
+                            generationConfig: {
+                                maxOutputTokens: 20,
+                                temperature: 0.1
+                            }
+                        })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (response.ok && data.candidates && data.candidates.length > 0) {
+                    if (candidate !== model) {
+                        geminiModelSelect.value = candidate;
+                        showAPIStatus(geminiApiStatus, `API key valid. Switched to available model: ${candidate}`, 'success');
+                    } else {
+                        showAPIStatus(geminiApiStatus, 'API Key is valid! ✓', 'success');
+                    }
+                    return;
                 }
-            );
-            
-            const data = await response.json();
-            
-            if (response.ok && data.candidates && data.candidates.length > 0) {
-                showAPIStatus(geminiApiStatus, 'API Key is valid! ✓', 'success');
-            } else if (data.error) {
-                // Handle specific error cases
-                if (data.error.message && data.error.message.includes('not found')) {
-                    showAPIStatus(geminiApiStatus, `Error: Model ${model} not found. Try updating to a newer model.`, 'error');
-                } else {
-                    showAPIStatus(geminiApiStatus, `Error: ${data.error.message}`, 'error');
+
+                finalError = data?.error?.message || `HTTP ${response.status}`;
+
+                // Stop retrying on non-model issues (auth/permission/quota).
+                if (response.status === 401 || response.status === 403 || response.status === 429) {
+                    break;
                 }
-            } else {
-                showAPIStatus(geminiApiStatus, 'Unknown error testing API', 'error');
             }
+
+            showAPIStatus(geminiApiStatus, `Error: ${finalError || 'No compatible Gemini model found for this key/project.'}`, 'error');
         } catch (error) {
             console.error('Gemini API test error:', error);
             showAPIStatus(geminiApiStatus, `Network error: ${error.message}`, 'error');
@@ -655,16 +687,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     if (showYoutubeKeyBtn && youtubeApiInput) {
-        showYoutubeKeyBtn.addEventListener('click', () => togglePasswordVisibility(youtubeApiInput));
+        showYoutubeKeyBtn.addEventListener('click', () => togglePasswordVisibility(youtubeApiInput, showYoutubeKeyBtn));
     }
     if (showOpenAIKeyBtn && openaiApiInput) {
-        showOpenAIKeyBtn.addEventListener('click', () => togglePasswordVisibility(openaiApiInput));
+        showOpenAIKeyBtn.addEventListener('click', () => togglePasswordVisibility(openaiApiInput, showOpenAIKeyBtn));
     }
     if (showHuggingfaceKeyBtn && huggingfaceApiInput) {
-        showHuggingfaceKeyBtn.addEventListener('click', () => togglePasswordVisibility(huggingfaceApiInput));
+        showHuggingfaceKeyBtn.addEventListener('click', () => togglePasswordVisibility(huggingfaceApiInput, showHuggingfaceKeyBtn));
     }
     if (showGeminiKeyBtn && geminiApiInput) {
-        showGeminiKeyBtn.addEventListener('click', () => togglePasswordVisibility(geminiApiInput));
+        showGeminiKeyBtn.addEventListener('click', () => togglePasswordVisibility(geminiApiInput, showGeminiKeyBtn));
     }
     
     if (testYoutubeApiBtn) testYoutubeApiBtn.addEventListener('click', testYoutubeAPI);

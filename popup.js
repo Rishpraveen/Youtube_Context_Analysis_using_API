@@ -356,7 +356,8 @@ function displayManualTranscriptModal(videoId, errorMessage = null) {
         chrome.runtime.sendMessage({
             action: "useManualTranscript",
             videoId: videoId,
-            transcript: transcript
+            transcript: transcript,
+            saveAsDefault: saveAsDefaultCheckbox.checked
         });
         
         // Close the modal
@@ -394,7 +395,7 @@ function displayManualTranscriptModal(videoId, errorMessage = null) {
 
 // --- Button Listeners ---
 
-transcriptBtn.addEventListener('click', () => {
+function requestTranscript() {
     if (isProcessing) return;
     setProcessing(true);
     updateStatus('Requesting transcript...');
@@ -404,10 +405,10 @@ transcriptBtn.addEventListener('click', () => {
         if (tabs[0]?.id && tabs[0]?.url && isYouTubeVideoUrl(tabs[0].url)) {
             const videoId = extractVideoId(tabs[0].url);
             currentVideoId = videoId;
-            chrome.runtime.sendMessage({ 
-                action: "getTranscript", 
+            chrome.runtime.sendMessage({
+                action: "getTranscript",
                 tabId: tabs[0].id,
-                videoId: videoId 
+                videoId: videoId
             });
         } else {
             updateStatus("Not a YouTube video or Short page or cannot access tab.", true);
@@ -415,6 +416,10 @@ transcriptBtn.addEventListener('click', () => {
             setProcessing(false);
         }
     });
+}
+
+transcriptBtn.addEventListener('click', () => {
+    requestTranscript();
 });
 
 commentsBtn.addEventListener('click', () => {
@@ -688,6 +693,13 @@ setProcessing(false);
 
 // Initial tab setup - ensure the first tab is active
 document.getElementById('tab-transcript').click();
+
+// Try auto-fetching transcript when popup opens on a valid YouTube video page.
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]?.url && isYouTubeVideoUrl(tabs[0].url)) {
+        requestTranscript();
+    }
+});
 
 // --- Export Button Listeners ---
 

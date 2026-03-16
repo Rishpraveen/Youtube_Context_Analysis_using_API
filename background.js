@@ -4,19 +4,19 @@ let API_PROVIDER = 'openai';
 
 // OpenAI settings
 let OPENAI_API_KEY = null;
-let OPENAI_MODEL = 'gpt-3.5-turbo';
+let OPENAI_MODEL = 'gpt-4.1-mini';
 
 // Hugging Face settings
 let HUGGINGFACE_API_KEY = null;
-let HUGGINGFACE_MODEL = 'microsoft/DialoGPT-medium';
+let HUGGINGFACE_MODEL = 'Qwen/Qwen2.5-7B-Instruct';
 
 // Gemini settings
 let GEMINI_API_KEY = null;
-let GEMINI_MODEL = 'gemini-1.5-flash';
+let GEMINI_MODEL = 'gemini-2.0-flash';
 
 // Ollama settings
 let OLLAMA_ENDPOINT = 'http://localhost:11434';
-let OLLAMA_MODEL = 'llama2';
+let OLLAMA_MODEL = 'llama3.2:3b';
 
 // General settings
 let BATCH_SIZE = 25;
@@ -179,19 +179,19 @@ async function loadSettings() {
         
         // OpenAI settings
         OPENAI_API_KEY = settings.openaiApiKey || null;
-        OPENAI_MODEL = settings.openaiModel || 'gpt-3.5-turbo';
+        OPENAI_MODEL = settings.openaiModel || 'gpt-4.1-mini';
         
         // Hugging Face settings
         HUGGINGFACE_API_KEY = settings.huggingfaceApiKey || null;
-        HUGGINGFACE_MODEL = settings.huggingfaceModel || 'microsoft/DialoGPT-medium';
+        HUGGINGFACE_MODEL = settings.huggingfaceModel || 'Qwen/Qwen2.5-7B-Instruct';
         
         // Gemini settings
         GEMINI_API_KEY = settings.geminiApiKey || null;
-        GEMINI_MODEL = settings.geminiModel || 'gemini-1.5-flash';
+        GEMINI_MODEL = settings.geminiModel || 'gemini-2.0-flash';
         
         // Ollama settings
         OLLAMA_ENDPOINT = settings.ollamaEndpoint || 'http://localhost:11434';
-        OLLAMA_MODEL = settings.ollamaModel || 'llama2';
+        OLLAMA_MODEL = settings.ollamaModel || 'llama3.2:3b';
         
         // General settings
         BATCH_SIZE = settings.batchSize || 25;
@@ -524,12 +524,21 @@ async function callGemini(messages, retries = 3) {
         // Skip system messages as we handled them separately
     }
     
-    for (let i = 0; i < retries; i++) {
+    const modelCandidates = [
+        GEMINI_MODEL,
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-1.5-flash',
+        'gemini-1.5-pro'
+    ].filter(Boolean).filter((m, idx, arr) => arr.indexOf(m) === idx);
+
+    for (const candidateModel of modelCandidates) {
+        for (let i = 0; i < retries; i++) {
         try {
-            updatePopupStatus(`Calling Gemini API (attempt ${i+1}/${retries})...`);
+            updatePopupStatus(`Calling Gemini API with ${candidateModel} (attempt ${i+1}/${retries})...`);
             
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+                `https://generativelanguage.googleapis.com/v1/models/${candidateModel}:generateContent?key=${GEMINI_API_KEY}`,
                 {
                     method: 'POST',
                     headers: {
@@ -558,7 +567,7 @@ async function callGemini(messages, retries = 3) {
                 if (response.status === 400) {
                     // Check for specific model not found error
                     if (errorMsg.includes('not found') || errorMsg.includes('not supported')) {
-                        throw new Error(`Gemini model '${GEMINI_MODEL}' is not available. Please update to a newer model like 'gemini-1.5-flash' in the options.`);
+                        throw new Error(`Gemini model '${candidateModel}' is not available for this key/project.`);
                     }
                     throw new Error(`Gemini API error: ${errorMsg}. Check your API key or reduce input size.`);
                 } else if (response.status === 403) {
@@ -578,14 +587,31 @@ async function callGemini(messages, retries = 3) {
         } catch (error) {
             console.error(`API attempt ${i+1} failed:`, error);
             
+            const errorText = error?.message || '';
+            const isModelAvailabilityError = /not available|not found|not supported/i.test(errorText);
+            const isAuthOrQuotaError = /access denied|permissions|401|403|429/i.test(errorText);
+
+            // If model is unavailable, try next model candidate immediately.
+            if (isModelAvailabilityError) {
+                break;
+            }
+
             if (i === retries - 1) throw error;
+
+            // Do not aggressively retry auth/quota failures.
+            if (isAuthOrQuotaError) {
+                throw error;
+            }
             
             // Exponential backoff
             const delay = 1000 * Math.pow(2, i);
             updatePopupStatus(`API call failed. Retrying in ${delay/1000} seconds...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
+        }
     }
+
+    throw new Error('No compatible Gemini model found. Select another model in options and re-test API.');
 }
 
 // Ollama API call with retry logic (local LLM)
@@ -1426,14 +1452,26 @@ async function fetchTranscriptViaPageExtraction(videoId) {
             }
             
             try {
-                // Inject content script to extract transcript
-                const result = await chrome.scripting.executeScript({
+                // First try player-data caption extraction (more robust across Chrome/Brave UI variants).
+                const playerDataResult = await chrome.scripting.executeScript({
+                    target: { tabId: tabs[0].id },
+                    function: extractTranscriptFromPlayerData,
+                    args: [PREFERRED_LANGUAGES, FETCH_ALL_LANGUAGES]
+                });
+
+                if (playerDataResult && playerDataResult[0] && playerDataResult[0].result) {
+                    resolve(playerDataResult[0].result);
+                    return;
+                }
+
+                // Fall back to UI-driven extraction.
+                const uiResult = await chrome.scripting.executeScript({
                     target: { tabId: tabs[0].id },
                     function: extractTranscriptFromPage,
                 });
                 
-                if (result && result[0] && result[0].result) {
-                    resolve(result[0].result);
+                if (uiResult && uiResult[0] && uiResult[0].result) {
+                    resolve(uiResult[0].result);
                 } else {
                     reject(new Error("Could not extract transcript from page"));
                 }
@@ -1441,6 +1479,209 @@ async function fetchTranscriptViaPageExtraction(videoId) {
                 reject(error);
             }
         });
+    });
+}
+
+// Extract transcript directly from YouTube player response caption tracks.
+// This avoids brittle UI selectors and works better across browser variants (e.g. Brave).
+function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLanguages = false) {
+    function escapeHtml(text) {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatSrtTime(totalSeconds) {
+        const ms = Math.round((totalSeconds % 1) * 1000);
+        const total = Math.floor(totalSeconds);
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const seconds = total % 60;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+    }
+
+    function srtToTranscript(srtContent) {
+        const entries = srtContent.split('\n\n').filter(entry => entry.trim());
+        const lines = [];
+
+        for (const entry of entries) {
+            const parts = entry.split('\n');
+            if (parts.length < 3) continue;
+            const timeLine = parts[1] || '';
+            const text = parts.slice(2).join(' ').trim();
+            const match = timeLine.match(/^(\d{2}:\d{2}:\d{2},\d{3})\s+-->/);
+            if (match && text) {
+                lines.push(`[${match[1]}] ${text}`);
+            }
+        }
+
+        return lines.join('\n');
+    }
+
+    function createCombinedTranscript(languageData) {
+        const langs = Object.keys(languageData);
+        if (langs.length === 1) {
+            return srtToTranscript(languageData[langs[0]].content);
+        }
+
+        const parts = ['=== MULTI-LANGUAGE TRANSCRIPT ===\n\n'];
+        for (const lang of langs) {
+            const item = languageData[lang];
+            parts.push(`--- ${(item.name || lang).toString()} (${lang.toUpperCase()}) ---\n`);
+            parts.push(srtToTranscript(item.content));
+            parts.push('\n\n');
+        }
+        return parts.join('');
+    }
+
+    function xmlToSrt(xmlText) {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+        const textNodes = Array.from(xmlDoc.getElementsByTagName('text'));
+
+        const chunks = [];
+        for (let i = 0; i < textNodes.length; i += 1) {
+            const node = textNodes[i];
+            const start = parseFloat(node.getAttribute('start') || '0');
+            const dur = parseFloat(node.getAttribute('dur') || '2');
+            const end = start + (Number.isFinite(dur) ? dur : 2);
+            const rawText = (node.textContent || '').replace(/\s+/g, ' ').trim();
+
+            if (!rawText) continue;
+
+            chunks.push([
+                String(chunks.length + 1),
+                `${formatSrtTime(start)} --> ${formatSrtTime(end)}`,
+                escapeHtml(rawText)
+            ].join('\n'));
+        }
+
+        return chunks.join('\n\n');
+    }
+
+    function parsePlayerResponse() {
+        const direct = window.ytInitialPlayerResponse;
+        if (direct && typeof direct === 'object') {
+            return direct;
+        }
+
+        try {
+            const raw = window.ytplayer?.config?.args?.player_response;
+            if (raw) return JSON.parse(raw);
+        } catch (_) {
+            // Ignore and continue.
+        }
+
+        return null;
+    }
+
+    function pickTracks(captionTracks) {
+        if (!Array.isArray(captionTracks) || captionTracks.length === 0) return [];
+
+        if (fetchAllLanguages) {
+            return captionTracks;
+        }
+
+        const selected = [];
+        const used = new Set();
+
+        for (const wanted of preferredLanguages || []) {
+            const wantedLc = String(wanted || '').toLowerCase();
+            const found = captionTracks.find(track => {
+                const code = String(track.languageCode || '').toLowerCase();
+                return code === wantedLc || code.startsWith(`${wantedLc}-`);
+            });
+
+            if (found && !used.has(found.baseUrl)) {
+                selected.push(found);
+                used.add(found.baseUrl);
+            }
+        }
+
+        if (selected.length > 0) {
+            return selected;
+        }
+
+        return [captionTracks[0]];
+    }
+
+    return new Promise(async (resolve, reject) => {
+        try {
+            const playerResponse = parsePlayerResponse();
+            const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+
+            if (!captionTracks.length) {
+                reject('No caption tracks found in player data');
+                return;
+            }
+
+            const tracks = pickTracks(captionTracks);
+            const languageData = {};
+            const fetchErrors = [];
+
+            for (const track of tracks) {
+                const langCode = track.languageCode || 'unknown';
+                try {
+                    const url = track.baseUrl.includes('fmt=') ? track.baseUrl : `${track.baseUrl}&fmt=srv3`;
+                    const response = await fetch(url, { credentials: 'include' });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const xmlText = await response.text();
+                    const srt = xmlToSrt(xmlText);
+                    if (!srt) {
+                        throw new Error('Empty caption response');
+                    }
+
+                    languageData[langCode] = {
+                        code: langCode,
+                        name: track.name?.simpleText || langCode,
+                        kind: track.kind || null,
+                        audioTrackType: track.audioTrackType || null,
+                        content: srt,
+                        isAutoTranslated: !!track.isTranslatable && !!track.vssId && String(track.vssId).includes('.tlang.')
+                    };
+                } catch (error) {
+                    fetchErrors.push({
+                        language: langCode,
+                        error: error?.message || String(error)
+                    });
+                }
+            }
+
+            const languages = Object.keys(languageData);
+            if (!languages.length) {
+                reject(fetchErrors[0]?.error || 'Unable to load captions from player data');
+                return;
+            }
+
+            if (fetchAllLanguages || languages.length > 1) {
+                resolve({
+                    type: 'multi-language',
+                    languages,
+                    languageData,
+                    primaryLanguage: languages[0],
+                    combinedTranscript: createCombinedTranscript(languageData),
+                    metadata: {
+                        availableLanguages: captionTracks.map(track => track.languageCode).filter(Boolean),
+                        missingLanguages: [],
+                        fetchErrors,
+                        totalTracksFound: captionTracks.length,
+                        totalTracksFetched: languages.length,
+                        extractionMethod: 'player-data'
+                    }
+                });
+                return;
+            }
+
+            resolve(srtToTranscript(languageData[languages[0]].content));
+        } catch (error) {
+            reject(error?.message || String(error));
+        }
     });
 }
 
@@ -1691,9 +1932,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "getTranscript") {
         // First check the cache
         const cachedTranscript = getCachedTranscript(request.videoId);
-        if (cachedTranscript) {
+        const hasInvalidMultiLangShape = cachedTranscript &&
+            typeof cachedTranscript === 'object' &&
+            cachedTranscript.type === 'multi-language' &&
+            (!cachedTranscript.languageData || Array.isArray(cachedTranscript.languageData));
+
+        if (cachedTranscript && !hasInvalidMultiLangShape) {
             sendDataToPopup("displayTranscript", cachedTranscript);
             return true;
+        }
+
+        if (hasInvalidMultiLangShape) {
+            console.warn('Ignoring malformed cached multi-language transcript payload and refetching.');
         }
         
         // If not in cache, fetch it
@@ -1704,14 +1954,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 
                 // Handle both multi-language and single-language transcripts
                 if (transcript && typeof transcript === 'object' && transcript.type === 'multi-language') {
-                    // Send multi-language transcript with language information
-                    sendDataToPopup("displayTranscript", {
-                        type: 'multi-language',
-                        languages: Object.keys(transcript.languages),
-                        primaryLanguage: transcript.primaryLanguage,
-                        combinedTranscript: transcript.combinedTranscript,
-                        languageData: transcript.languages
-                    });
+                    // Send the normalized multi-language transcript object as-is.
+                    sendDataToPopup("displayTranscript", transcript);
                 } else {
                     // Send single-language transcript (backward compatibility)
                     sendDataToPopup("displayTranscript", transcript);
@@ -1730,89 +1974,99 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     if (request.action === "analyzeComments") {
         console.log('analyzeComments request received for video:', request.videoId);
-        
-        // First check the cache
-        const cachedAnalysis = getCachedCommentAnalysis(request.videoId, API_PROVIDER);
-        if (cachedAnalysis) {
-            console.log('Using cached comment analysis');
-            chrome.runtime.sendMessage({
-                action: "displayCommentAnalysis",
-                data: {
-                    ...cachedAnalysis,
-                    provider: API_PROVIDER,
-                    fromCache: true
-                }
-            });
-            return true;
-        }
-        
-        console.log('No cached analysis found, performing new analysis...');
-        // If not in cache, perform analysis
-        fetchAndAnalyzeComments(request.videoId)
-            .then(result => {
-                console.log('Comment analysis completed:', result);
-                // Cache the analysis
-                cacheCommentAnalysis(request.videoId, API_PROVIDER, result);
+
+        // Ensure provider/settings are up-to-date before cache routing.
+        loadSettings().then(() => {
+            const cachedAnalysis = getCachedCommentAnalysis(request.videoId, API_PROVIDER);
+            if (cachedAnalysis) {
+                console.log('Using cached comment analysis');
                 chrome.runtime.sendMessage({
                     action: "displayCommentAnalysis",
                     data: {
-                        ...result,
-                        provider: API_PROVIDER
+                        ...cachedAnalysis,
+                        provider: API_PROVIDER,
+                        fromCache: true
                     }
                 });
-            })
-            .catch(error => {
-                console.error("Comment analysis error:", error);
-                chrome.runtime.sendMessage({
-                    action: "displayCommentAnalysis",
-                    error: error.message
+                return;
+            }
+
+            console.log('No cached analysis found, performing new analysis...');
+            fetchAndAnalyzeComments(request.videoId)
+                .then(result => {
+                    console.log('Comment analysis completed:', result);
+                    cacheCommentAnalysis(request.videoId, API_PROVIDER, result);
+                    chrome.runtime.sendMessage({
+                        action: "displayCommentAnalysis",
+                        data: {
+                            ...result,
+                            provider: API_PROVIDER
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error("Comment analysis error:", error);
+                    chrome.runtime.sendMessage({
+                        action: "displayCommentAnalysis",
+                        error: error.message
+                    });
+                    updatePopupStatus(error.message, true, false);
                 });
-                updatePopupStatus(error.message, true, false);
+        }).catch(error => {
+            chrome.runtime.sendMessage({
+                action: "displayCommentAnalysis",
+                error: `Failed to load settings: ${error.message}`
             });
+        });
         return true;
     }
     
     if (request.action === "performRagAnalysis") {
         console.log('performRagAnalysis request received for video:', request.videoId, 'query:', request.query);
-        
-        // First check the cache
-        const cachedRagAnalysis = getCachedRagAnalysis(request.videoId, request.query, API_PROVIDER);
-        if (cachedRagAnalysis) {
-            console.log('Using cached RAG analysis');
-            chrome.runtime.sendMessage({
-                action: "displayRagAnalysis",
-                data: {
-                    ...cachedRagAnalysis,
-                    provider: API_PROVIDER,
-                    fromCache: true
-                }
-            });
-            return true;
-        }
-        
-        console.log('No cached RAG analysis found, performing new analysis...');
-        // If not in cache, perform analysis
-        performRagAnalysis(request.videoId, request.query)
-            .then(result => {
-                console.log('RAG analysis completed:', result);
-                // Cache the RAG analysis
-                cacheRagAnalysis(request.videoId, request.query, API_PROVIDER, result);
+
+        // Ensure provider/settings are up-to-date before cache routing.
+        loadSettings().then(() => {
+            const cachedRagAnalysis = getCachedRagAnalysis(request.videoId, request.query, API_PROVIDER);
+            if (cachedRagAnalysis) {
+                console.log('Using cached RAG analysis');
                 chrome.runtime.sendMessage({
                     action: "displayRagAnalysis",
                     data: {
-                        ...result,
-                        provider: API_PROVIDER
+                        ...cachedRagAnalysis,
+                        provider: API_PROVIDER,
+                        fromCache: true
                     }
                 });
-            })
-            .catch(error => {
-                console.error("RAG analysis error:", error);
-                chrome.runtime.sendMessage({
-                    action: "displayRagAnalysis",
-                    error: error.message
+                return;
+            }
+
+            console.log('No cached RAG analysis found, performing new analysis...');
+            performRagAnalysis(request.videoId, request.query)
+                .then(result => {
+                    console.log('RAG analysis completed:', result);
+                    cacheRagAnalysis(request.videoId, request.query, API_PROVIDER, result);
+                    chrome.runtime.sendMessage({
+                        action: "displayRagAnalysis",
+                        data: {
+                            ...result,
+                            provider: API_PROVIDER
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error("RAG analysis error:", error);
+                    chrome.runtime.sendMessage({
+                        action: "displayRagAnalysis",
+                        error: error.message
+                    });
+                    updatePopupStatus(error.message, true, false);
                 });
-                updatePopupStatus(error.message, true, false);
+        }).catch(error => {
+            chrome.runtime.sendMessage({
+                action: "displayRagAnalysis",
+                error: `Failed to load settings: ${error.message}`
             });
+        });
         return true;
     }
 

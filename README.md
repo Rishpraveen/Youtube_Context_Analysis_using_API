@@ -1,244 +1,117 @@
-# YouTube Context Analyzer Extension
+# YouTube Context Analyzer
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/extension-id.svg)](https://chrome.google.com/webstore/detail/extension-id)
-[![Chrome Web Store Users](https://img.shields.io/chrome-web-store/users/extension-id.svg)](https://chrome.google.com/webstore/detail/extension-id)
-[![GitHub issues](https://img.shields.io/github/issues/Rishpraveen/Youtube_Context_Analysis_using_API.svg)](https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API/issues)
-[![GitHub stars](https://img.shields.io/github/stars/Rishpraveen/Youtube_Context_Analysis_using_API.svg?style=social)](https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API/stargazers)
+Chrome extension for extracting YouTube transcripts, analyzing comments, and running transcript-grounded Q&A with selectable LLM providers.
 
-> A powerful Chrome extension that analyzes YouTube video context using transcript extraction, comment analysis, and RAG (Retrieval-Augmented Generation). **Now supports both standard YouTube videos and YouTube Shorts!**
+## What It Does
 
-## ✨ Features
+- Extracts transcripts from YouTube videos and Shorts.
+- Supports multi-language caption retrieval when available.
+- Falls back to page/player extraction when API-based transcript fetching fails.
+- Analyzes comments for sentiment and recurring themes.
+- Answers user questions from transcript context (RAG-style flow).
+- Supports `openai`, `huggingface`, `gemini`, and local `ollama` providers.
+- Provides manual transcript mode when automatic extraction is not possible.
 
-### 🎥 **Video Analysis**
-- **Transcript Extraction**: Automatically extracts video transcripts using YouTube API or direct page extraction
-- **Multi-Language Caption Support**: Fetches and analyzes captions in multiple languages for comprehensive analysis
-- **YouTube Shorts Support**: Works with both standard YouTube videos (`/watch?v=`) and YouTube Shorts (`/shorts/`)
-- **Browser Player Extraction**: Fallback extraction directly from YouTube player when API is unavailable
+## Supported URLs
 
-### 💬 **Comment Analysis**
-- **Sentiment Analysis**: Analyzes video comments for sentiment and key themes
-- **Batch Processing**: Configurable comment batch sizes for optimal performance
-- **Comment Filtering**: Supports limiting total comments analyzed
+- `https://www.youtube.com/watch?v=...`
+- `https://www.youtube.com/shorts/...`
 
-### 🤖 **AI-Powered RAG Analysis**
-- **Multiple LLM Providers**: Support for OpenAI, Hugging Face, Gemini, and Ollama
-- **Question Answering**: Ask questions about video content and get answers based on the transcript
-- **Fact Checking**: Select text and right-click to fact-check claims in the video
-- **Intelligent Chunking**: Configurable transcript chunk sizes for better processing
+## Install (Developer Mode)
 
-### 🌍 **Language Support**
-- **Well-supported languages**: English, Spanish, French, German, Japanese, Korean, Chinese, Arabic, Hindi, Portuguese, Russian, Italian, Dutch, Swedish, Danish, Norwegian, Finnish, Turkish, Polish, Ukrainian
-- **Indian languages**: Tamil, Telugu, Bengali, Malayalam, Kannada, Gujarati, Punjabi, Marathi, Urdu (⚠️ limited auto-caption support)
-- **Other languages**: Thai, Vietnamese, Indonesian, Malay, Hebrew, Persian (some with limited support)
+1. Clone the repository:
 
-### ⚡ **Performance & Usability**
-- **Result Caching**: Improved performance with intelligent result caching
-- **Export Results**: Download analysis results as HTML or text files
-- **Keyboard Shortcuts**: Convenient keyboard shortcuts for common actions
-- **Progress Tracking**: Visual progress indicators for all operations
-- **Manual Mode**: Option to manually input transcripts when automatic extraction fails
+```bash
+git clone https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API.git
+```
 
-## 🚀 Quick Start
+2. Open `chrome://extensions/`.
+3. Enable `Developer mode`.
+4. Click `Load unpacked` and select this project folder.
 
-### Installation
+## Required and Optional Configuration
 
-1. **Clone or download this repository**
-   ```bash
-   git clone https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API.git
-   ```
+Open the extension options page and configure the following.
 
-2. **Load the extension in Chrome**
-   - Open Chrome and navigate to `chrome://extensions/`
-   - Enable "Developer mode" in the top right corner
-   - Click "Load unpacked" and select the folder containing this extension
+- `YouTube API key`:
+   Needed for YouTube Data API based transcript/comments access. If unavailable or failing, the extension tries browser-based fallback paths where possible.
+- `LLM provider`:
+   Choose one of `openai`, `huggingface`, `gemini`, or `ollama`.
 
-3. **Configure API keys**
-   - Click the extension icon to open the popup
-   - Go to options and configure your API keys (see [API Setup](#-api-setup) below)
+Provider-specific settings:
 
-### API Setup
+- `openai`: API key and model.
+- `huggingface`: API key (optional for some models) and model.
+- `gemini`: API key and model.
+- `ollama`: local endpoint (default `http://localhost:11434`) and model.
 
-#### YouTube API Key (Required)
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Enable the YouTube Data API v3
-4. Create credentials (API key)
-5. Copy and paste the API key in the extension options
+Performance/settings:
 
-#### Choose Your LLM Provider
+- `batchSize`, `maxComments`, `chunkSize`.
+- `fetchAllLanguages`, `preferredLanguages`, `autoTranslateCaptions`.
+- `browserExtractionEnabled`.
+- `manualMode` and `defaultTranscript`.
 
-**Option 1: OpenAI API Key**
-- Go to [OpenAI API Keys](https://platform.openai.com/api-keys)
-- Create an account or log in
-- Create a new secret key
-- Copy and paste the key in the extension options
+## Usage
 
-**Option 2: Hugging Face API Key (Free Alternative)**
-- Go to [Hugging Face](https://huggingface.co/settings/tokens)
-- Create an account or log in
-- Create a new access token
-- Copy and paste the token in the extension options
+1. Open a YouTube video or Short.
+2. Open the extension popup.
+3. Use tabs:
+    - `Transcript`: fetch transcript.
+    - `Comments`: analyze comments.
+    - `RAG Analysis`: ask questions based on transcript text.
+4. Export transcript/comments/RAG outputs from popup export buttons.
 
-**Option 3: Google Gemini API Key (Free Tier Available)**
-- Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
-- Create an account or log in
-- Create a new API key
-- Copy and paste the key in the extension options
+Keyboard shortcuts in popup:
 
-**Option 4: Ollama (Completely Free, Local Option)**
-- Install [Ollama](https://ollama.ai/) on your local machine
-- Start the Ollama server
-- Configure the endpoint URL (default: `http://localhost:11434`)
-- Select your preferred model in the extension options
+- `Ctrl+1`, `Ctrl+2`, `Ctrl+3`: switch tabs.
+- `t`: fetch transcript (Transcript tab).
+- `c`: analyze comments (Comments tab).
+- `r`: focus RAG input (RAG tab).
 
-## 📖 Usage Guide
+## Local Model (Ollama)
 
-### Getting Transcripts
-1. Navigate to any YouTube video or Short
-2. Click the extension icon
-3. Go to the "Transcript" tab
-4. Click "Get Transcript" or use **Ctrl+T**
-5. View extracted transcripts in multiple languages (if available)
+To run analysis locally:
 
-### Analyzing Comments
-1. In the "Comments" tab
-2. Click "Analyze Comments" or use **Ctrl+C**
-3. Configure batch size and maximum comments in options for optimal performance
-4. View sentiment analysis and key themes
+1. Install Ollama.
+2. Start Ollama service locally.
+3. Pull at least one model (example: `llama3.2:3b`).
+4. In options, set provider to `ollama`.
+5. Confirm endpoint and model values match your local setup.
 
-### RAG Analysis
-1. Go to the "RAG Analysis" tab
-2. Enter your question about the video content
-3. Use **Ctrl+R** to focus on the query input
-4. Get AI-powered answers based on the transcript
+If you installed models using Alpaca, use the same model name shown by `ollama list` in the `Model` field.
 
-### Keyboard Shortcuts
-- **Ctrl+1**: Switch to Transcript tab
-- **Ctrl+2**: Switch to Comments tab  
-- **Ctrl+3**: Switch to RAG Analysis tab
-- **T**: Get transcript (when in Transcript tab)
-- **C**: Analyze comments (when in Comments tab)
-- **R**: Focus on RAG query input (when in RAG tab)
+If the endpoint or model is invalid, analysis requests fail with a provider error in the popup status.
 
-### Exporting Results
-Use the download buttons next to each analysis section:
-- **Transcript**: Exports as a text file (.txt)
-- **Comment Analysis**: Exports as an HTML report
-- **RAG Analysis**: Exports as an HTML report
+## Architecture (High-Level)
 
-## ⚙️ Configuration
+- `manifest.json`: extension configuration and permissions.
+- `background.js`: orchestration, API calls, caching, provider routing, context menu.
+- `content.js`: page-level extraction (captions/comments metadata and fallback logic).
+- `popup.js`: popup UI actions, progress, rendering, export.
+- `options.js`: settings management and provider/API validation.
 
-### Performance Settings
-- **Comment Batch Size**: Controls how many comments are processed at once (lower = less RAM usage)
-- **Max Comments**: Limits total comments to analyze (lower = faster processing)
-- **Chunk Size**: Size of transcript chunks for RAG (smaller = less memory usage)
+## Troubleshooting
 
-### Language Settings
-- **Fetch All Languages**: When enabled, fetches captions in all available languages
-- **Preferred Languages**: Select languages in order of preference (when "Fetch All Languages" is disabled)
-- **Auto-Generated Translations**: Include auto-translated captions (may be less accurate)
+- Transcript not loading:
+   Verify you are on a supported YouTube URL, then try manual mode if captions are unavailable.
+- Provider errors:
+   Re-check selected provider credentials/endpoint/model in options.
+- Ollama not responding:
+   Confirm Ollama is running and reachable at configured endpoint.
+- Comment fetch issues:
+   If YouTube API path fails, fallback scraping may still work depending on page state and loaded comments.
 
-### Manual Mode
-If automatic transcript extraction fails:
-1. Go to extension options
-2. Enable "Use Manual Mode"
-3. Optionally paste a default transcript
-4. When using the extension, you'll be prompted to paste the transcript manually
+## Development Notes
 
-## 🛠️ Technical Details
+- Project is plain JavaScript (no bundler).
+- Load as unpacked extension for testing.
+- A small URL support script exists: `test_shorts_support.js` (requires local Node.js runtime).
 
-### Supported YouTube Formats
-- **Standard YouTube Videos**: `https://www.youtube.com/watch?v=VIDEO_ID`
-- **YouTube Shorts**: `https://www.youtube.com/shorts/VIDEO_ID`
+## Contributing
 
-The extension automatically detects the video format and extracts the video ID accordingly.
+See `Contributing.md`.
 
-### Browser Player Caption Extraction
-When the YouTube API doesn't have captions for certain languages:
-- **Automatic Fallback**: Enabled by default, triggers when API extraction fails
-- **Real-time Extraction**: Captures captions as they appear in the player
-- **Multi-language Support**: Can extract multiple languages sequentially
-- **Manual Control**: Can be disabled in settings if not desired
+## License
 
-### Caching System
-- Transcripts are cached for 1 hour
-- Analysis results are cached based on the selected API provider
-- Cache is automatically cleaned to prevent excessive memory usage
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
-- How to report bugs
-- How to suggest features
-- How to submit pull requests
-- Code style guidelines
-
-## 🛡️ Security
-
-For security concerns, please see our [Security Policy](SECURITY.md).
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🌟 Support
-
-If you find this project useful, please consider:
-- ⭐ Starring this repository
-- 🐛 Reporting bugs through [Issues](https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API/issues)
-- 💡 Suggesting new features
-- 🔄 Sharing with others
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-**API Keys Not Working**
-- Use the "Test API" buttons in options to verify your keys
-
-**High Memory Usage**
-- Reduce batch size and chunk size in the options
-
-**Transcript Extraction Fails**
-- Switch to manual mode and paste the transcript manually
-- Check if the video has captions available
-
-**Extension Closing**
-- This has been fixed in recent updates - popup now stays open during operations
-
-**Slow Analysis**
-- Enable caching and consider using a more efficient API provider
-- Reduce the number of comments being analyzed
-
-**YouTube Shorts Issues**
-- Ensure you're on a valid YouTube video or Short page
-- Extension now supports both `/watch?v=` and `/shorts/` URLs
-
-**Video ID Not Detected**
-- Make sure you're on `youtube.com/watch?v=` or `youtube.com/shorts/` URLs
-- Refresh the page and try again
-
-### Privacy Notice
-
-This extension only processes data for the currently active YouTube video. No data is stored on external servers, and API keys are stored locally in your browser.
-
-## 🏗️ Built With
-
-- **JavaScript** - Core functionality
-- **Chrome Extension APIs** - Browser integration
-- **YouTube Data API v3** - Video and transcript data
-- **Multiple AI APIs** - OpenAI, Hugging Face, Gemini, Ollama
-- **RAG Technology** - Retrieval-Augmented Generation
-
-## 🔗 Links
-
-- [Chrome Web Store](https://chrome.google.com/webstore) (Coming Soon)
-- [Issues](https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API/issues)
-- [Discussions](https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API/discussions)
-
----
-
-**Made with ❤️ by [Rishpraveen](https://github.com/Rishpraveen)**
-
-*⚡ Powered by AI • 🎯 Built for Researchers • 🌍 Multi-language Ready*
+MIT. See `LICENSE`.
