@@ -1047,54 +1047,73 @@ async function fetchAndAnalyzeComments(videoId) {
 // YouTube transcript fetching with auto-detection
 async function fetchTranscriptFromPage(videoId) {
     await loadSettings();
+    const suppressManualPrompt = MANUAL_MODE;
     
-    // If manual mode is enabled, use the default transcript
+    // Manual mode is now hands-free: prefer default transcript if set,
+    // otherwise continue with automated extraction without prompting the user.
     if (MANUAL_MODE) {
-        updatePopupStatus("Using manual transcript mode...");
+        updatePopupStatus("Manual mode enabled: running hands-free transcript flow...");
         
         if (DEFAULT_TRANSCRIPT && DEFAULT_TRANSCRIPT.trim().length > 0) {
             return DEFAULT_TRANSCRIPT;
-        } else {
-            // Show popup to request transcript input
-            chrome.runtime.sendMessage({
-                action: "requestManualTranscript",
-                videoId: videoId
-            }).catch(err => console.error("Error requesting manual transcript:", err));
-            
-            throw new Error("Manual mode is enabled. Please paste the transcript in the popup.");
         }
     }
     
-    // First, try to get the transcript via YouTube API (if key available)
-    if (YOUTUBE_API_KEY) {
-        try {
-            updatePopupStatus("Fetching transcript via YouTube API...");
-            const transcript = await fetchTranscriptViaAPI(videoId);
-            return transcript;
-        } catch (error) {
-            console.log("YouTube API transcript fetch failed, falling back to page extraction:", error);
-            updatePopupStatus("YouTube API failed, trying page extraction...");
-            // Fall through to page extraction
-        }
-    } else {
-        updatePopupStatus("No YouTube API key found, using page extraction...");
-    }
-    
-    // Fall back to page extraction
+    // Primary path: player/page extraction. This is more reliable for public videos.
     try {
+        updatePopupStatus("Fetching transcript from player/page...");
         const transcript = await fetchTranscriptViaPageExtraction(videoId);
         return transcript;
     } catch (error) {
         console.error("Transcript extraction failed:", error);
-        
-        // If all automatic methods fail, ask for manual input
-        chrome.runtime.sendMessage({
-            action: "requestManualTranscript",
-            videoId: videoId,
-            error: error.message
-        }).catch(err => console.error("Error requesting manual transcript:", err));
-        
-        throw new Error(`Could not automatically extract transcript: ${error.message}. Please try manual mode.`);
+
+        // Final fallback: capture subtitles directly from the player overlay.
+        if (BROWSER_EXTRACTION_ENABLED) {
+            try {
+                updatePopupStatus("Trying browser player subtitle capture fallback...");
+                const browserResult = await fetchCaptionsViaBrowserPlayer(videoId, PREFERRED_LANGUAGES);
+                if (browserResult && browserResult.totalTracksFetched > 0) {
+                    const languages = Object.keys(browserResult.captions);
+                    if (FETCH_ALL_LANGUAGES || languages.length > 1) {
+                        return {
+                            type: 'multi-language',
+                            languages,
+                            languageData: browserResult.captions,
+                            primaryLanguage: languages[0],
+                            combinedTranscript: createCombinedTranscript(browserResult.captions),
+                            metadata: {
+                                availableLanguages: browserResult.availableLanguages,
+                                missingLanguages: browserResult.missingLanguages,
+                                fetchErrors: browserResult.fetchErrors,
+                                totalTracksFound: browserResult.totalTracksFound,
+                                totalTracksFetched: browserResult.totalTracksFetched,
+                                extractionMethod: 'browser-player-overlay-fallback'
+                            }
+                        };
+                    }
+
+                    // Single-language compatibility path
+                    const firstLang = languages[0];
+                    return convertSRTToTranscript(browserResult.captions[firstLang].content);
+                }
+            } catch (overlayError) {
+                console.error('Browser player overlay capture fallback failed:', overlayError);
+            }
+        }
+
+        // Keep manual mode non-interactive by skipping manual input prompts.
+        if (!suppressManualPrompt) {
+            chrome.runtime.sendMessage({
+                action: "requestManualTranscript",
+                videoId: videoId,
+                error: error.message
+            }).catch(err => console.error("Error requesting manual transcript:", err));
+        }
+
+        const suffix = suppressManualPrompt
+            ? 'Manual mode is hands-free; configure a default transcript for guaranteed fallback.'
+            : 'Please try manual mode.';
+        throw new Error(`Could not automatically extract transcript: ${error.message}. ${suffix}`);
     }
 }
 
@@ -1452,34 +1471,336 @@ async function fetchTranscriptViaPageExtraction(videoId) {
             }
             
             try {
-                // First try player-data caption extraction (more robust across Chrome/Brave UI variants).
-                const playerDataResult = await chrome.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
-                    function: extractTranscriptFromPlayerData,
-                    args: [PREFERRED_LANGUAGES, FETCH_ALL_LANGUAGES]
-                });
+                const maxAttempts = 3;
+                let lastError = null;
 
-                if (playerDataResult && playerDataResult[0] && playerDataResult[0].result) {
-                    resolve(playerDataResult[0].result);
-                    return;
+                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                    try {
+                        // First try main-world metadata extraction, then fetch/parse captions in background.
+                        const trackResult = await chrome.scripting.executeScript({
+                            target: { tabId: tabs[0].id },
+                            world: 'MAIN',
+                            function: extractCaptionTracksFromMainWorld
+                        });
+
+                        const tracks = trackResult?.[0]?.result?.tracks || [];
+                        if (Array.isArray(tracks) && tracks.length > 0) {
+                            try {
+                                const transcript = await buildTranscriptFromCaptionTracks(tracks, PREFERRED_LANGUAGES, FETCH_ALL_LANGUAGES);
+                                if (transcript) {
+                                    resolve(transcript);
+                                    return;
+                                }
+                            } catch (trackError) {
+                                // Keep going: timedtext can fail for some videos (e.g. pot/rate-limit issues).
+                                lastError = trackError;
+                            }
+                        }
+
+                        // Fall back to UI-driven extraction.
+                        const uiResult = await chrome.scripting.executeScript({
+                            target: { tabId: tabs[0].id },
+                            function: extractTranscriptFromPage,
+                        });
+
+                        if (uiResult && uiResult[0] && uiResult[0].result) {
+                            resolve(uiResult[0].result);
+                            return;
+                        }
+
+                        lastError = new Error("Could not extract transcript from page");
+                    } catch (attemptError) {
+                        lastError = attemptError;
+                    }
+
+                    if (attempt < maxAttempts) {
+                        await new Promise(waitResolve => setTimeout(waitResolve, 1200));
+                    }
                 }
 
-                // Fall back to UI-driven extraction.
-                const uiResult = await chrome.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
-                    function: extractTranscriptFromPage,
-                });
-                
-                if (uiResult && uiResult[0] && uiResult[0].result) {
-                    resolve(uiResult[0].result);
-                } else {
-                    reject(new Error("Could not extract transcript from page"));
-                }
+                reject(lastError || new Error("Could not extract transcript from page"));
             } catch (error) {
                 reject(error);
             }
         });
     });
+}
+
+// Read caption track metadata from YouTube page globals in MAIN world.
+function extractCaptionTracksFromMainWorld() {
+    function parseResponse() {
+        const direct = window.ytInitialPlayerResponse;
+        if (direct && typeof direct === 'object') return direct;
+
+        try {
+            const raw = window.ytplayer?.config?.args?.player_response;
+            if (raw) return JSON.parse(raw);
+        } catch (_) {
+            // ignore
+        }
+
+        return null;
+    }
+
+    const playerResponse = parseResponse();
+    const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+    return {
+        tracks: tracks.map(track => ({
+            baseUrl: track.baseUrl,
+            languageCode: track.languageCode,
+            kind: track.kind || null,
+            vssId: track.vssId || null,
+            isTranslatable: !!track.isTranslatable,
+            audioTrackType: track.audioTrackType || null,
+            name: track.name?.simpleText || track.languageCode || 'unknown'
+        }))
+    };
+}
+
+function decodeXmlEntities(text) {
+    return String(text || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+}
+
+function secondsToSrt(ts) {
+    const totalSeconds = Number(ts) || 0;
+    const ms = Math.round((totalSeconds % 1) * 1000);
+    const total = Math.floor(totalSeconds);
+    const hh = Math.floor(total / 3600);
+    const mm = Math.floor((total % 3600) / 60);
+    const ss = total % 60;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+}
+
+function xmlToSrtLocal(xmlText) {
+    const chunks = [];
+    const regex = /<text\s+([^>]*)>([\s\S]*?)<\/text>/g;
+    let match;
+    while ((match = regex.exec(xmlText)) !== null) {
+        const attrs = match[1] || '';
+        const body = decodeXmlEntities(match[2] || '').replace(/\s+/g, ' ').trim();
+        if (!body) continue;
+
+        const startMatch = attrs.match(/start="([^"]+)"/);
+        const durMatch = attrs.match(/dur="([^"]+)"/);
+        const start = Number(startMatch?.[1] || 0);
+        const dur = Number(durMatch?.[1] || 2);
+        const end = start + (Number.isFinite(dur) ? dur : 2);
+
+        chunks.push([
+            String(chunks.length + 1),
+            `${secondsToSrt(start)} --> ${secondsToSrt(end)}`,
+            body
+        ].join('\n'));
+    }
+    return chunks.join('\n\n');
+}
+
+function json3ToSrtLocal(json3Text) {
+    const data = JSON.parse(json3Text);
+    const events = Array.isArray(data?.events) ? data.events : [];
+    const chunks = [];
+    for (const event of events) {
+        const segs = Array.isArray(event?.segs) ? event.segs : [];
+        if (!segs.length) continue;
+        const text = segs.map(seg => seg?.utf8 || '').join('').replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+        const startMs = Number(event?.tStartMs || 0);
+        const durMs = Number(event?.dDurationMs || 2000);
+        const endMs = startMs + (Number.isFinite(durMs) ? durMs : 2000);
+        chunks.push([
+            String(chunks.length + 1),
+            `${secondsToSrt(startMs / 1000)} --> ${secondsToSrt(endMs / 1000)}`,
+            text
+        ].join('\n'));
+    }
+    return chunks.join('\n\n');
+}
+
+function vttToSrtLocal(vttText) {
+    const blocks = String(vttText || '')
+        .replace(/\r/g, '')
+        .replace(/^WEBVTT\s*\n?/, '')
+        .split('\n\n')
+        .map(b => b.trim())
+        .filter(Boolean);
+
+    const chunks = [];
+    for (const block of blocks) {
+        const lines = block.split('\n').filter(Boolean);
+        const idx = lines.findIndex(line => line.includes('-->'));
+        if (idx < 0) continue;
+        const [startRaw, endRaw] = lines[idx].split('-->').map(s => s.trim());
+        if (!startRaw || !endRaw) continue;
+        const start = (startRaw.split(':').length === 2 ? `00:${startRaw}` : startRaw).replace('.', ',');
+        const end = ((endRaw.split(' ')[0] || '').split(':').length === 2 ? `00:${endRaw.split(' ')[0]}` : (endRaw.split(' ')[0] || '')).replace('.', ',');
+        const text = lines.slice(idx + 1).join(' ').replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+
+        chunks.push([
+            String(chunks.length + 1),
+            `${start} --> ${end}`,
+            text
+        ].join('\n'));
+    }
+    return chunks.join('\n\n');
+}
+
+function srtToTranscriptLocal(srtContent) {
+    const entries = String(srtContent || '').split('\n\n').filter(e => e.trim());
+    const lines = [];
+    for (const entry of entries) {
+        const parts = entry.split('\n');
+        if (parts.length < 3) continue;
+        const timeLine = parts[1] || '';
+        const text = parts.slice(2).join(' ').trim();
+        const match = timeLine.match(/^(\d{2}:\d{2}:\d{2},\d{3})\s+-->/);
+        if (match && text) lines.push(`[${match[1]}] ${text}`);
+    }
+    return lines.join('\n');
+}
+
+function isAutoTrackLocal(track) {
+    const vss = String(track?.vssId || '').toLowerCase();
+    return track?.kind === 'asr' || vss.includes('.asr');
+}
+
+function isAutoTranslatedTrackLocal(track) {
+    const vss = String(track?.vssId || '').toLowerCase();
+    return vss.includes('.tlang.') || vss.includes('a.') || !!track?.isTranslatable;
+}
+
+function pickTracksLocal(captionTracks, preferredLanguages, fetchAllLanguages) {
+    if (!Array.isArray(captionTracks) || captionTracks.length === 0) return [];
+    if (fetchAllLanguages) {
+        return [...captionTracks].sort((a, b) => Number(isAutoTrackLocal(b)) - Number(isAutoTrackLocal(a)));
+    }
+
+    const selected = [];
+    const used = new Set();
+
+    for (const wanted of preferredLanguages || []) {
+        const wantedLc = String(wanted || '').toLowerCase();
+        const candidates = captionTracks.filter(track => {
+            const code = String(track.languageCode || '').toLowerCase();
+            return code === wantedLc || code.startsWith(`${wantedLc}-`);
+        });
+        const found = candidates.find(isAutoTrackLocal) || candidates[0];
+        if (found && found.baseUrl && !used.has(found.baseUrl)) {
+            used.add(found.baseUrl);
+            selected.push(found);
+        }
+    }
+
+    if (selected.length > 0) return selected;
+    const auto = captionTracks.find(isAutoTrackLocal);
+    return [auto || captionTracks[0]];
+}
+
+async function fetchTrackAsSrtLocal(baseUrl) {
+    const tries = ['json3', 'srv3', 'vtt', null];
+    for (const fmt of tries) {
+        let url;
+        try {
+            const u = new URL(baseUrl);
+            if (fmt) u.searchParams.set('fmt', fmt);
+            url = u.toString();
+        } catch (_) {
+            url = fmt ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}fmt=${fmt}` : baseUrl;
+        }
+
+        const response = await fetch(url, { method: 'GET' });
+        if (!response.ok) continue;
+        const body = await response.text();
+        if (!body || !body.trim()) continue;
+
+        try {
+            if ((fmt === 'json3' || body.trim().startsWith('{')) && body.includes('"events"')) {
+                const srt = json3ToSrtLocal(body);
+                if (srt) return srt;
+                continue;
+            }
+            if (fmt === 'vtt' || body.includes('WEBVTT')) {
+                const srt = vttToSrtLocal(body);
+                if (srt) return srt;
+                continue;
+            }
+            const srt = xmlToSrtLocal(body);
+            if (srt) return srt;
+        } catch (_) {
+            // try next
+        }
+    }
+    throw new Error('Timedtext returned unsupported or empty data (possible pot-token or rate-limit constraint)');
+}
+
+function createCombinedTranscriptLocal(languageData) {
+    const langs = Object.keys(languageData);
+    if (langs.length === 1) return srtToTranscriptLocal(languageData[langs[0]].content);
+
+    const parts = ['=== MULTI-LANGUAGE TRANSCRIPT ===\n\n'];
+    for (const lang of langs) {
+        const item = languageData[lang];
+        parts.push(`--- ${(item.name || lang).toString()} (${lang.toUpperCase()}) ---\n`);
+        parts.push(srtToTranscriptLocal(item.content));
+        parts.push('\n\n');
+    }
+    return parts.join('');
+}
+
+async function buildTranscriptFromCaptionTracks(captionTracks, preferredLanguages, fetchAllLanguages) {
+    const tracks = pickTracksLocal(captionTracks, preferredLanguages, fetchAllLanguages);
+    if (!tracks.length) return null;
+
+    const languageData = {};
+    const fetchErrors = [];
+
+    for (const track of tracks) {
+        const langCode = track.languageCode || 'unknown';
+        try {
+            const srt = await fetchTrackAsSrtLocal(track.baseUrl);
+            languageData[langCode] = {
+                code: langCode,
+                name: track.name || langCode,
+                kind: track.kind || (isAutoTrackLocal(track) ? 'asr' : null),
+                audioTrackType: track.audioTrackType || null,
+                content: srt,
+                isAutoTranslated: isAutoTranslatedTrackLocal(track)
+            };
+        } catch (error) {
+            fetchErrors.push({ language: langCode, error: error?.message || String(error) });
+        }
+    }
+
+    const languages = Object.keys(languageData);
+    if (!languages.length) {
+        throw new Error(fetchErrors[0]?.error || 'Unable to load captions from player track URLs');
+    }
+
+    if (fetchAllLanguages || languages.length > 1) {
+        return {
+            type: 'multi-language',
+            languages,
+            languageData,
+            primaryLanguage: languages[0],
+            combinedTranscript: createCombinedTranscriptLocal(languageData),
+            metadata: {
+                availableLanguages: captionTracks.map(track => track.languageCode).filter(Boolean),
+                missingLanguages: [],
+                fetchErrors,
+                totalTracksFound: captionTracks.length,
+                totalTracksFetched: languages.length,
+                extractionMethod: 'player-data-local-bg-fetch'
+            }
+        };
+    }
+
+    return srtToTranscriptLocal(languageData[languages[0]].content);
 }
 
 // Extract transcript directly from YouTube player response caption tracks.
@@ -1562,6 +1883,124 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
         return chunks.join('\n\n');
     }
 
+    function json3ToSrt(json3Text) {
+        const data = JSON.parse(json3Text);
+        const events = Array.isArray(data?.events) ? data.events : [];
+        const chunks = [];
+
+        for (const event of events) {
+            const segs = Array.isArray(event?.segs) ? event.segs : [];
+            if (!segs.length) continue;
+
+            const text = segs.map(seg => seg?.utf8 || '').join('').replace(/\s+/g, ' ').trim();
+            if (!text) continue;
+
+            const startMs = Number(event?.tStartMs || 0);
+            const durMs = Number(event?.dDurationMs || 2000);
+            const endMs = startMs + (Number.isFinite(durMs) ? durMs : 2000);
+
+            chunks.push([
+                String(chunks.length + 1),
+                `${formatSrtTime(startMs / 1000)} --> ${formatSrtTime(endMs / 1000)}`,
+                escapeHtml(text)
+            ].join('\n'));
+        }
+
+        return chunks.join('\n\n');
+    }
+
+    function normalizeVttTime(vttTime) {
+        const clean = String(vttTime || '').trim().replace('.', ',');
+        const parts = clean.split(':');
+        if (parts.length === 3) return clean;
+        if (parts.length === 2) return `00:${clean}`;
+        return clean;
+    }
+
+    function vttToSrt(vttText) {
+        const blocks = vttText
+            .replace(/\r/g, '')
+            .replace(/^WEBVTT\s*\n?/, '')
+            .split('\n\n')
+            .map(block => block.trim())
+            .filter(Boolean);
+
+        const chunks = [];
+        for (const block of blocks) {
+            const lines = block.split('\n').filter(Boolean);
+            if (!lines.length) continue;
+
+            let timeLineIndex = lines.findIndex(line => line.includes('-->'));
+            if (timeLineIndex < 0) continue;
+
+            const timeLine = lines[timeLineIndex];
+            const [startRaw, endRaw] = timeLine.split('-->').map(s => s.trim());
+            if (!startRaw || !endRaw) continue;
+
+            const endOnlyTime = endRaw.split(' ')[0];
+            const start = normalizeVttTime(startRaw);
+            const end = normalizeVttTime(endOnlyTime);
+            const text = lines.slice(timeLineIndex + 1).join(' ').replace(/\s+/g, ' ').trim();
+            if (!text) continue;
+
+            chunks.push([
+                String(chunks.length + 1),
+                `${start} --> ${end}`,
+                escapeHtml(text)
+            ].join('\n'));
+        }
+
+        return chunks.join('\n\n');
+    }
+
+    function extractJsonObjectAfterToken(source, token) {
+        const tokenIndex = source.indexOf(token);
+        if (tokenIndex < 0) return null;
+
+        const start = source.indexOf('{', tokenIndex + token.length);
+        if (start < 0) return null;
+
+        let depth = 0;
+        let inString = false;
+        let quoteChar = '';
+        let escaped = false;
+
+        for (let i = start; i < source.length; i += 1) {
+            const ch = source[i];
+
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+                if (ch === '\\') {
+                    escaped = true;
+                    continue;
+                }
+                if (ch === quoteChar) {
+                    inString = false;
+                    quoteChar = '';
+                }
+                continue;
+            }
+
+            if (ch === '"' || ch === "'") {
+                inString = true;
+                quoteChar = ch;
+                continue;
+            }
+
+            if (ch === '{') depth += 1;
+            if (ch === '}') depth -= 1;
+
+            if (depth === 0) {
+                return source.slice(start, i + 1);
+            }
+        }
+
+        return null;
+    }
+
     function parsePlayerResponse() {
         const direct = window.ytInitialPlayerResponse;
         if (direct && typeof direct === 'object') {
@@ -1575,14 +2014,90 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
             // Ignore and continue.
         }
 
+        // In extension isolated worlds, page globals are often unavailable.
+        // Parse the embedded script content as a robust local fallback.
+        try {
+            const scripts = Array.from(document.scripts || []);
+            for (const script of scripts) {
+                const text = script?.textContent || '';
+                if (!text.includes('ytInitialPlayerResponse')) continue;
+
+                const extracted =
+                    extractJsonObjectAfterToken(text, 'ytInitialPlayerResponse =') ||
+                    extractJsonObjectAfterToken(text, 'var ytInitialPlayerResponse =') ||
+                    extractJsonObjectAfterToken(text, 'window["ytInitialPlayerResponse"] =');
+
+                if (!extracted) continue;
+
+                const parsed = JSON.parse(extracted);
+                if (parsed && typeof parsed === 'object') {
+                    return parsed;
+                }
+            }
+        } catch (_) {
+            // Ignore and continue.
+        }
+
         return null;
+    }
+
+    function isAutoTrack(track) {
+        const vssId = String(track?.vssId || '').toLowerCase();
+        return track?.kind === 'asr' || vssId.includes('.asr');
+    }
+
+    function isAutoTranslatedTrack(track) {
+        const vssId = String(track?.vssId || '').toLowerCase();
+        return vssId.includes('.tlang.') || vssId.includes('a.') || !!track?.isTranslatable;
+    }
+
+    function toCaptionUrl(baseUrl, fmt) {
+        const url = new URL(baseUrl, location.origin);
+        if (fmt) {
+            url.searchParams.set('fmt', fmt);
+        }
+        return url.toString();
+    }
+
+    async function fetchTrackAsSrt(baseUrl) {
+        const tries = ['json3', 'srv3', 'vtt', null];
+
+        for (const fmt of tries) {
+            const url = toCaptionUrl(baseUrl, fmt);
+            const response = await fetch(url, { credentials: 'include' });
+            if (!response.ok) continue;
+
+            const body = await response.text();
+            if (!body || !body.trim()) continue;
+
+            try {
+                if ((fmt === 'json3' || body.trim().startsWith('{')) && body.includes('"events"')) {
+                    const srt = json3ToSrt(body);
+                    if (srt) return srt;
+                    continue;
+                }
+
+                if (fmt === 'vtt' || body.includes('WEBVTT')) {
+                    const srt = vttToSrt(body);
+                    if (srt) return srt;
+                    continue;
+                }
+
+                const srt = xmlToSrt(body);
+                if (srt) return srt;
+            } catch (_) {
+                // Try next format.
+            }
+        }
+
+        throw new Error('No supported caption format returned by timedtext endpoint');
     }
 
     function pickTracks(captionTracks) {
         if (!Array.isArray(captionTracks) || captionTracks.length === 0) return [];
 
         if (fetchAllLanguages) {
-            return captionTracks;
+            return [...captionTracks].sort((a, b) => Number(isAutoTrack(b)) - Number(isAutoTrack(a)));
         }
 
         const selected = [];
@@ -1590,10 +2105,12 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
 
         for (const wanted of preferredLanguages || []) {
             const wantedLc = String(wanted || '').toLowerCase();
-            const found = captionTracks.find(track => {
+            const candidates = captionTracks.filter(track => {
                 const code = String(track.languageCode || '').toLowerCase();
                 return code === wantedLc || code.startsWith(`${wantedLc}-`);
             });
+
+            const found = candidates.find(isAutoTrack) || candidates[0];
 
             if (found && !used.has(found.baseUrl)) {
                 selected.push(found);
@@ -1605,7 +2122,8 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
             return selected;
         }
 
-        return [captionTracks[0]];
+        const auto = captionTracks.find(isAutoTrack);
+        return [auto || captionTracks[0]];
     }
 
     return new Promise(async (resolve, reject) => {
@@ -1625,14 +2143,7 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
             for (const track of tracks) {
                 const langCode = track.languageCode || 'unknown';
                 try {
-                    const url = track.baseUrl.includes('fmt=') ? track.baseUrl : `${track.baseUrl}&fmt=srv3`;
-                    const response = await fetch(url, { credentials: 'include' });
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-
-                    const xmlText = await response.text();
-                    const srt = xmlToSrt(xmlText);
+                    const srt = await fetchTrackAsSrt(track.baseUrl);
                     if (!srt) {
                         throw new Error('Empty caption response');
                     }
@@ -1640,10 +2151,10 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
                     languageData[langCode] = {
                         code: langCode,
                         name: track.name?.simpleText || langCode,
-                        kind: track.kind || null,
+                        kind: track.kind || (isAutoTrack(track) ? 'asr' : null),
                         audioTrackType: track.audioTrackType || null,
                         content: srt,
-                        isAutoTranslated: !!track.isTranslatable && !!track.vssId && String(track.vssId).includes('.tlang.')
+                        isAutoTranslated: isAutoTranslatedTrack(track)
                     };
                 } catch (error) {
                     fetchErrors.push({
@@ -1672,7 +2183,7 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
                         fetchErrors,
                         totalTracksFound: captionTracks.length,
                         totalTracksFetched: languages.length,
-                        extractionMethod: 'player-data'
+                        extractionMethod: 'player-data-local'
                     }
                 });
                 return;
@@ -1688,44 +2199,90 @@ function extractTranscriptFromPlayerData(preferredLanguages = ['en'], fetchAllLa
 // Content script function to extract transcript from YouTube page
 function extractTranscriptFromPage() {
     return new Promise((resolve, reject) => {
-        // Find transcript button and click it
-        const transcriptButton = Array.from(document.querySelectorAll('button'))
-            .find(button => button.textContent?.includes('Show transcript'));
-        
-        if (!transcriptButton) {
-            reject("Transcript button not found on page");
+        function readTranscriptFromDom() {
+            const panels = Array.from(document.querySelectorAll('ytd-transcript-renderer, ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]'));
+            for (const panel of panels) {
+                const segments = panel.querySelectorAll('ytd-transcript-segment-renderer, .ytd-transcript-segment-renderer');
+                if (!segments || segments.length === 0) continue;
+
+                const lines = Array.from(segments).map(segment => {
+                    const timeElement = segment.querySelector('.segment-timestamp, [class*="timestamp"]');
+                    const textElement = segment.querySelector('.segment-text, [class*="segment-text"], [class*="text"]');
+                    const time = timeElement?.textContent?.trim() || '';
+                    const text = textElement?.textContent?.trim() || '';
+                    if (!text) return '';
+                    return time ? `[${time}] ${text}` : text;
+                }).filter(Boolean);
+
+                if (lines.length > 0) {
+                    return lines.join('\n');
+                }
+            }
+            return '';
+        }
+
+        function pollForTranscript(maxMs, intervalMs, onDone) {
+            const started = Date.now();
+            const timer = setInterval(() => {
+                const text = readTranscriptFromDom();
+                if (text) {
+                    clearInterval(timer);
+                    onDone(text, null);
+                    return;
+                }
+
+                if (Date.now() - started >= maxMs) {
+                    clearInterval(timer);
+                    onDone('', new Error('Timed out waiting for transcript segments'));
+                }
+            }, intervalMs);
+        }
+
+        // Fast path if transcript panel is already open.
+        const immediate = readTranscriptFromDom();
+        if (immediate) {
+            resolve(immediate);
             return;
         }
-        
-        transcriptButton.click();
-        
-        // Wait for transcript panel to appear
-        setTimeout(() => {
-            const transcriptPanel = document.querySelector('ytd-transcript-renderer');
-            if (!transcriptPanel) {
-                reject("Transcript panel not found after clicking button");
-                return;
-            }
-            
-            // Extract text from transcript segments
-            const segments = transcriptPanel.querySelectorAll('ytd-transcript-segment-renderer');
-            const transcriptText = Array.from(segments).map(segment => {
-                const timeElement = segment.querySelector('.segment-timestamp');
-                const textElement = segment.querySelector('.segment-text');
-                if (timeElement && textElement) {
-                    return `[${timeElement.textContent.trim()}] ${textElement.textContent.trim()}`;
+
+        const transcriptButton = Array.from(document.querySelectorAll('button, tp-yt-paper-item'))
+            .find(el => {
+                const text = (el.textContent || '').trim();
+                const aria = (el.getAttribute?.('aria-label') || '').trim();
+                return /show transcript/i.test(text) || /show transcript/i.test(aria) || /^transcript$/i.test(text) || /^transcript$/i.test(aria);
+            });
+
+        if (transcriptButton) {
+            transcriptButton.click();
+            pollForTranscript(12000, 500, (text, err) => {
+                if (text) resolve(text);
+                else reject(err?.message || 'Transcript UI opened but no segments were found');
+            });
+            return;
+        }
+
+        const moreActions = document.querySelector('button[aria-label="More actions"], ytd-menu-renderer button');
+        if (moreActions) {
+            moreActions.click();
+            setTimeout(() => {
+                const menuItem = Array.from(document.querySelectorAll('tp-yt-paper-item, ytd-menu-service-item-renderer'))
+                    .find(el => /show transcript/i.test((el.textContent || '').trim()));
+
+                if (!menuItem) {
+                    reject('Transcript option not found in actions menu');
+                    return;
                 }
-                return '';
-            }).join('\n');
-            
-            resolve(transcriptText);
-            
-            // Close transcript panel
-            const closeButton = transcriptPanel.querySelector('button[aria-label="Close transcript"]');
-            if (closeButton) {
-                closeButton.click();
-            }
-        }, 1000);
+
+                menuItem.click();
+                pollForTranscript(12000, 500, (text, err) => {
+                    if (text) resolve(text);
+                    else reject(err?.message || 'Transcript menu action completed but no transcript segments were found');
+                });
+            }, 500);
+            return;
+        }
+
+        reject('Transcript UI controls not found on page');
     });
 }
 
@@ -1965,7 +2522,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.error("Transcript error:", error);
                 chrome.runtime.sendMessage({
                     action: "displayTranscript",
-                    error: error.message
+                    error: error.message,
+                    suppressManualPrompt: MANUAL_MODE
                 });
                 updatePopupStatus(error.message, true, false);
             });

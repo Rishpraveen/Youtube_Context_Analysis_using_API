@@ -560,7 +560,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } else if (request.error) {
             transcriptResultDiv.textContent = `Error: ${request.error}`;
             updateStatus(`Error fetching transcript: ${request.error}`, true);
-            displayManualTranscriptModal(currentVideoId, request.error); // Show manual entry modal on error
+            if (!request.suppressManualPrompt) {
+                displayManualTranscriptModal(currentVideoId, request.error); // Show manual entry modal on error
+            }
         }
     } else if (request.action === "displayCommentAnalysis") {
         console.log('Received displayCommentAnalysis message:', request);

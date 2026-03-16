@@ -6,7 +6,7 @@ Chrome extension for extracting YouTube transcripts, analyzing comments, and run
 
 - Extracts transcripts from YouTube videos and Shorts.
 - Supports multi-language caption retrieval when available.
-- Falls back to page/player extraction when API-based transcript fetching fails.
+- Extracts captions locally from YouTube player/page data without requiring YouTube Data API v3.
 - Analyzes comments for sentiment and recurring themes.
 - Answers user questions from transcript context (RAG-style flow).
 - Supports `openai`, `huggingface`, `gemini`, and local `ollama` providers.
@@ -34,7 +34,7 @@ git clone https://github.com/Rishpraveen/Youtube_Context_Analysis_using_API.git
 Open the extension options page and configure the following.
 
 - `YouTube API key`:
-   Needed for YouTube Data API based transcript/comments access. If unavailable or failing, the extension tries browser-based fallback paths where possible.
+   Optional. Transcript extraction primarily uses player/page methods; API key is mainly used for more reliable comment fetching.
 - `LLM provider`:
    Choose one of `openai`, `huggingface`, `gemini`, or `ollama`.
 

@@ -330,6 +330,16 @@ function startCaptionExtraction(languageInfo, resolve, reject) {
     const maxExtractionTime = 30000; // 30 seconds max
     let lastCaptionTime = Date.now();
 
+    // Ensure playback is running so subtitles render.
+    try {
+        const videoEl = document.querySelector('video');
+        if (videoEl && videoEl.paused) {
+            videoEl.play().catch(() => {});
+        }
+    } catch (_) {
+        // Ignore playback control issues and continue extraction attempts.
+    }
+
     const captionExtractor = setInterval(() => {
         const currentTime = Date.now();
 
