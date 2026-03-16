@@ -115,3 +115,5 @@ See `Contributing.md`.
 ## License
 
 MIT. See `LICENSE`.
+
+Thank you. 
